@@ -17,6 +17,7 @@ import usersRoutes from "./routes/usersRoutes.js";
 import tradeAccRoutes from "./routes/tradeAccRoutes.js";
 // import notificationRoutes from "./routes/notificationRoutes.js";
 import tradeRoutes from "./routes/tradeRoutes.js";
+import strategiesRoutes from "./routes/strategiesRoutes.js";
 
 const app = express();
 const globalPrefix = "/public/api/v1";
@@ -75,6 +76,7 @@ app.use(`${globalPrefix}/users`, usersRoutes);
 app.use(`${globalPrefix}/trade-account`, tradeAccRoutes);
 // app.use(`${globalPrefix}/notification`, notificationRoutes);
 app.use(`${globalPrefix}/trade`, tradeRoutes);
+app.use(`${globalPrefix}/strategies`, strategiesRoutes);
 
 // Send 404 for any unknown API request
 app.use((req, res, next) => {

@@ -22,7 +22,7 @@ const Strategy = sequelize.define(
       allowNull: true, // e.g., "active", "draft", "archived"
     },
     type: {
-      type: DataTypes.ENUM("scalping", "swing", "day", "longterm"), // example enum values
+      type: DataTypes.STRING, // example enum values "scalping", "swing", "day", "longterm"
       allowNull: false,
       field: "strategies_type_enum",
     },
