@@ -1,5 +1,4 @@
 import { authService } from "../services/authService.js";
-// const { successResponse, errorResponse } = require('../utils/response.js');
 
 const register = async (req, res) => {
   try {
@@ -37,7 +36,7 @@ const login = async (req, res) => {
       code: 200,
       success: true,
       message: "Login successful",
-      data: data,
+      data: response.data,
       redirectTo: response.redirectTo,
     });
   } catch (error) {
@@ -118,7 +117,7 @@ const adminLogin = async (req, res) => {
       code: 200,
       success: true,
       message: "Login successful",
-      data: data,
+      data: response.data,
     });
   } catch (error) {
     return res.status(400).json({

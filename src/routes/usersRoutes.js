@@ -7,6 +7,7 @@ router.get("/get", usersController.getUsers);
 router.get("/get/:id", usersController.getUserById);
 router.patch("/update/:id", usersController.updateUser);
 router.delete("/delete/:id", usersController.deleteUser);
+router.patch("/change-password/:id", usersController.changePassword);
 router.post("/bulk-create", auth(["admin"]), usersController.bulkCreateUsers);
 router.delete("/bulk-delete", auth(["admin"]), usersController.bulkDeleteUsers);
 

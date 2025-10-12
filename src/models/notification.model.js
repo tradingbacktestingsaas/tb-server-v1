@@ -11,7 +11,7 @@ const Notification = sequelize.define(
     },
     userId: {
       type: DataTypes.STRING, // varchar
-      allowNull: false,
+      allowNull: true,
     },
     type: {
       type: DataTypes.STRING(64),

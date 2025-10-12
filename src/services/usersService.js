@@ -1,5 +1,6 @@
 import User from "../models/user.model.js";
 import { Op, Sequelize } from "sequelize";
+import { encrypt } from "../utils/cryptoUtil.js";
 
 export async function getUsers(options = {}) {
   try {
@@ -164,7 +165,7 @@ const updateUser = async (userId, userDetail) => {
     if (!user) {
       throw new Error("User not found");
     }
-    
+
     const updatedUser = await user.update(userDetail);
     if (!updatedUser) {
       throw new Error("User not updated");
@@ -181,6 +182,25 @@ const updateUser = async (userId, userDetail) => {
   }
 };
 
+async function changePassword(userId, newPassword) {
+  try {
+    const user = await User.findByPk(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+    user.password = encrypt(newPassword);;
+    await user.save();
+    return {
+      message: "Password changed successfully",
+      data: user,
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error in changePassword service:", error);
+    throw new Error(`Failed to change password: ${error}`);
+  }
+}
+
 export const usersService = {
   bulkCreateUsers,
   bulkDeleteUsers,
@@ -188,4 +208,5 @@ export const usersService = {
   getUserById,
   updateUser,
   deleteUser,
+  changePassword,
 };

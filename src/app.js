@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import cookieParser from 'cookie-parser';
+import cookieParser from "cookie-parser";
 import httpStatus from "http-status";
 import { rateLimit } from "express-rate-limit";
 import { errorConverter, errorHandler } from "./middlewares/error.js";
@@ -9,8 +9,13 @@ import { errorConverter, errorHandler } from "./middlewares/error.js";
 import ApiError from "./utils/ApiError.js";
 import config from "./config/env.js";
 import dbConnection from "./config/db.js";
+
+import "./associations/userAssociation/index.js"; 
+
 import authRoutes from "./routes/authRoutes.js";
 import usersRoutes from "./routes/usersRoutes.js";
+import tradeAccRoutes from "./routes/tradeAccRoutes.js";
+// import notificationRoutes from "./routes/notificationRoutes.js";
 
 const app = express();
 const globalPrefix = "/public/api/v1";
@@ -66,6 +71,8 @@ if (config.env === "production") {
 // app.use('/api', routes);
 app.use(`${globalPrefix}/auth`, authRoutes);
 app.use(`${globalPrefix}/users`, usersRoutes);
+app.use(`${globalPrefix}/trade-account`, tradeAccRoutes);
+// app.use(`${globalPrefix}/notification`, notificationRoutes);
 
 // Send 404 for any unknown API request
 app.use((req, res, next) => {

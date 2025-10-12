@@ -84,11 +84,26 @@ const updateUser = async (req, res) => {
   }
 };
 
-export const usersController = {
+const changePassword = async (req, res) => {
+  try {
+    const user = await usersService.changePassword(req.params.id, req.body.password);
+    return res.status(201).json(user);
+  } catch (error) {
+    return res.status(400).json({
+      code: 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+
+export const  usersController = {
   getUsers,
   getUserById,
   bulkCreateUsers,
   bulkDeleteUsers,
   deleteUser,
   updateUser,
+  changePassword,
 };

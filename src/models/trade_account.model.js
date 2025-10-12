@@ -9,13 +9,7 @@ const TradeAccount = sequelize.define(
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    uuid: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      allowNull: false,
-      unique: true,
-    },
-    accountid: {
+    accountId: {
       type: DataTypes.STRING, // trading account ID (e.g., MT4/MT5 account number)
       allowNull: false,
     },
@@ -27,7 +21,7 @@ const TradeAccount = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
-    TradesyncId: {
+    tradesyncId: {
       type: DataTypes.STRING,
       allowNull: true, // ID used for syncing with external trading service
     },
@@ -44,9 +38,9 @@ const TradeAccount = sequelize.define(
       allowNull: false,
     },
     type: {
-      type: DataTypes.STRING, // e.g., "demo" or "real"
+      type: DataTypes.STRING, // e.g., "free" or "sync"
       allowNull: false,
-      defaultValue: "demo",
+      defaultValue: "FREE",
     },
   },
   {
