@@ -1,26 +1,25 @@
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import httpStatus from 'http-status';
-import { rateLimit } from 'express-rate-limit';
-import {errorConverter,errorHandler} from './middlewares/error.js';
+import express from "express";
+import cors from "cors";
+import cookieParser from 'cookie-parser';
+import httpStatus from "http-status";
+import { rateLimit } from "express-rate-limit";
+import { errorConverter, errorHandler } from "./middlewares/error.js";
 // import routes from './routes';
 // import { errorConverter, errorHandler } from './middlewares/error';
-import ApiError from './utils/ApiError.js';
-import config from './config/env.js';
-import logger from './utils/logger.js';
-import dbConnection from './config/db.js';
-import authRoutes from './routes/authRoutes.js';
-import usersRoutes from './routes/usersRoutes.js';
-
+import ApiError from "./utils/ApiError.js";
+import config from "./config/env.js";
+import dbConnection from "./config/db.js";
+import authRoutes from "./routes/authRoutes.js";
+import usersRoutes from "./routes/usersRoutes.js";
 
 const app = express();
+const globalPrefix = "/public/api/v1";
 
 const allowedOrigins = [
-  "https://woowsocial.com",
+  "https://tradingbacktesting.com",
   "https://admin.woowsocial.com",
   "http://localhost:3000",
-  "http://localhost:5000"
+  "http://localhost:5000",
 ];
 
 const corsOptions = {
@@ -42,6 +41,7 @@ app.options("*", cors(corsOptions)); // make sure OPTIONS always handled
 
 // Parse JSON request body
 app.use(express.json());
+app.use(cookieParser());
 
 // Parse urlencoded request body
 app.use(express.urlencoded({ extended: true }));
@@ -50,25 +50,26 @@ app.use(express.urlencoded({ extended: true }));
 await dbConnection();
 
 // Limit repeated failed requests to auth endpoints
-if (config.env === 'production') {
+if (config.env === "production") {
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // Limit each IP to 100 requests per windowMs
-    message: 'Too many requests from this IP, please try again after 15 minutes',
+    message:
+      "Too many requests from this IP, please try again after 15 minutes",
   });
 
   // Apply to all auth routes
-  app.use('/api/auth', limiter);
+  app.use(`${globalPrefix}/auth`, limiter);
 }
 
 // API routes
 // app.use('/api', routes);
-app.use('/api/auth', authRoutes);
-app.use('/api/user', usersRoutes);
+app.use(`${globalPrefix}/auth`, authRoutes);
+app.use(`${globalPrefix}/users`, usersRoutes);
 
 // Send 404 for any unknown API request
 app.use((req, res, next) => {
-  next(new ApiError(httpStatus.NOT_FOUND, 'Not found'));
+  next(new ApiError(httpStatus.NOT_FOUND, "Not found"));
 });
 
 // Convert error to ApiError, if needed

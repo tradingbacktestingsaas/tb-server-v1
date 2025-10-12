@@ -1,11 +1,11 @@
-import jwt from 'jsonwebtoken';
+import jwt from "jsonwebtoken";
 import {
   JWT_SECRET,
   JWT_ACCESS_EXPIRATION_MINUTES,
   JWT_REFRESH_EXPIRATION_DAYS,
   JWT_RESET_PASSWORD_EXPIRATION_MINUTES,
   JWT_VERIFY_EMAIL_EXPIRATION_MINUTES,
-} from '../config/env.js';
+} from "../config/env.js";
 
 /**
  * Generate token
@@ -25,17 +25,17 @@ const generateToken = (payload, expiresIn) => {
 const generateAuthTokens = (user) => {
   const accessTokenExpires = `${JWT_ACCESS_EXPIRATION_MINUTES}m`;
   const refreshTokenExpires = `${JWT_REFRESH_EXPIRATION_DAYS}d`;
-  
+
   const accessToken = generateToken(
     { sub: user.id, role: user.role },
     accessTokenExpires
   );
-  
+
   const refreshToken = generateToken(
-    { sub: user.id, type: 'refresh' },
+    { sub: user.id, type: "refresh" },
     refreshTokenExpires
   );
-  
+
   return {
     access: {
       token: accessToken,
@@ -43,7 +43,9 @@ const generateAuthTokens = (user) => {
     },
     refresh: {
       token: refreshToken,
-      expires: new Date(Date.now() + JWT_REFRESH_EXPIRATION_DAYS * 24 * 60 * 60 * 1000),
+      expires: new Date(
+        Date.now() + JWT_REFRESH_EXPIRATION_DAYS * 24 * 60 * 60 * 1000
+      ),
     },
   };
 };
@@ -52,9 +54,9 @@ const generateAuthTokens = (user) => {
  * Generate reset password token
  * @returns {string} - Reset password token
  */
-const generateResetPasswordToken = () => {
+const generateResetPasswordToken = (payload) => {
   const expiresIn = `${JWT_RESET_PASSWORD_EXPIRATION_MINUTES}m`;
-  return generateToken({ type: 'resetPassword' }, expiresIn);
+  return generateToken({ type: "password_reset", ...payload }, expiresIn);
 };
 
 /**
@@ -63,7 +65,7 @@ const generateResetPasswordToken = () => {
  */
 const generateVerifyEmailToken = () => {
   const expiresIn = `${JWT_VERIFY_EMAIL_EXPIRATION_MINUTES}m`;
-  return generateToken({ type: 'verifyEmail' }, expiresIn);
+  return generateToken({ type: "verifyEmail" }, expiresIn);
 };
 
 /**
@@ -75,7 +77,7 @@ const verifyToken = (token) => {
   return new Promise((resolve, reject) => {
     jwt.verify(token, JWT_SECRET, (err, decoded) => {
       if (err) {
-        reject(new Error('Invalid token'));
+        reject(new Error("Invalid token"));
       } else {
         resolve(decoded);
       }

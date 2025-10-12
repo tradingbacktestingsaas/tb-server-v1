@@ -1,12 +1,12 @@
 import { DataTypes } from "sequelize";
-import { sequelize } from '../config/db.js';
+import { sequelize } from "../config/db.js";
 
 const Admin = sequelize.define(
   "Admin",
   {
     id: {
-      type: DataTypes.INTEGER,
-      autoIncrement: true,
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
     first_name: {

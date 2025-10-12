@@ -1,19 +1,13 @@
 import { DataTypes } from "sequelize";
-import { sequelize } from '../config/db.js';
+import { sequelize } from "../config/db.js";
 
 const User = sequelize.define(
   "user",
   {
     id: {
-      type: DataTypes.INTEGER,
-      autoIncrement: true,
-      primaryKey: true,
-    },
-    uuid: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
-      allowNull: false,
-      unique: true,
+      primaryKey: true,
     },
     firstName: {
       type: DataTypes.STRING,
@@ -48,10 +42,6 @@ const User = sequelize.define(
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
-    verified: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-    },
     activeTradeAccountId: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -69,9 +59,9 @@ const User = sequelize.define(
       defaultValue: true,
     },
     plan: {
-      type: DataTypes.ENUM("FREE", "BASIC", "PRO", "ENTERPRISE"), // 🟢 Customize user_plan_enum values
-      allowNull: false,
-      defaultValue: "FREE",
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: null,
     },
     passwordResetVersion: {
       type: DataTypes.BIGINT, // int8

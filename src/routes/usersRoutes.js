@@ -1,9 +1,13 @@
-import express from 'express';
-import {usersController} from '../controllers/usersController.js';
-import auth from '../middlewares/auth.js';
+import express from "express";
+import { usersController } from "../controllers/usersController.js";
+import auth from "../middlewares/auth.js";
 
 const router = express.Router();
-
-router.get('/users', auth(['admin']), usersController.getUsers);
+router.get("/get", usersController.getUsers);
+router.get("/get/:id", usersController.getUserById);
+router.patch("/update/:id", usersController.updateUser);
+router.delete("/delete/:id", usersController.deleteUser);
+router.post("/bulk-create", auth(["admin"]), usersController.bulkCreateUsers);
+router.delete("/bulk-delete", auth(["admin"]), usersController.bulkDeleteUsers);
 
 export default router;

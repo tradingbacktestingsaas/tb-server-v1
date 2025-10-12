@@ -1,0 +1,35 @@
+# ==== PORT AND CONNECTION STRING ====
+PORT=8080
+DATABASE_URL=postgresql://asad_tanvir:gEpcdUxV3Ocv-gz_01qchQ@sharkdb-2636.7s5.aws-ap-south-1.cockroachlabs.cloud:26257/tbfx?sslmode=verify-full
+FRONT_END_URL=https://tradingbacktesting.com
+
+# ==== JWT SECRET ====
+SECRET_KEY=xcbdfqvdtxznfjbewyvdbuqrixncibfkalhgyebfdsfnsdcjxnk
+
+# ==== OAuth ====
+GOOGLE_CLIENT_ID=406218299171-qopbpjivcrm1ppo9rqdqocu30s8bfh37.apps.googleusercontent.com
+CLIENT_SECRET=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
+
+# ==== AWS S3 CREDS ====
+AWS_ACCESS_KEY_ID=AKIAXYKJTX3HSQNHQQTF
+AWS_SECRET_ACCESS_KEY=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
+S3_BUCKET=my-next-testing-aws-storage01
+
+# ==== IMAGEKIT ====
+IMAGEKIT_ENDPOINT_URL=https://ik.imagekit.io/epbtkdzri1
+
+# ==== SMTP CREDS ====
+SMTP_USER=asadtanvir20@gmail.com
+SMTP_PASSWORD=ZGRIB7TKYg083z9h
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_FROM=Tradingbacktestingapp@gmail.com
+
+# ==== Encryption Key ====
+ENCRYPTION_KEY=f1d3ff8443297732862df21dc4e57262c14d39e45c55cf6d8a94c09c061d5b7e
+
+# ==== Recaptcha Site Key ====
+RECAPTCHA_SECRET_KEY=6Lda9tUrAAAAAMF09bHVH3zhszpTUrdN_Gr8ZZJY
+
+STRIPE_SECRET_KEY=sk_test_51Rl7gSQMmvUoFNcIdiX3mIwfziJ2ijF0kiWpEfZoH3k4VpKMg0zRJFHTzPPox2AHYTTd11jlV5acHdtjgok94HaR00K2qyELMP    
+WEBHOOK_SECRET_KEY=whsec_2VaM7b9AGAsFo5xyWCm1YJin3ztj17C6
+# WEBHOOK_SECRET_KEY=whsec_7e247f85f050786c7de398d917ea8614dc305984759c0002ae2b7c5fb401f5ad

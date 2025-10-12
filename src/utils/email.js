@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
-import config from '../config/env';
-import logger from './logger';
+import config from '../config/env.js';
+import logger from './logger.js';
 
 const { email } = config;
 
@@ -34,7 +34,7 @@ transporter.verify((error) => {
  */
 const sendEmail = async (to, subject, text, html) => {
   const msg = {
-    from: `"${email.fromName}" <${email.from}>`,
+    from: `"${"Tradingbacktesting Team"}" <${email.from}>`,
     to,
     subject,
     text,
