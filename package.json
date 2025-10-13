@@ -29,8 +29,10 @@
     "pino-pretty": "^11.2.2",
     "sequelize": "^6.37.3",
     "sequelize-cockroachdb": "^6.0.5",
+    "socket.io": "^4.8.1",
     "stripe": "^14.25.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "eslint": "^9.8.0",

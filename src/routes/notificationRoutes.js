@@ -1,12 +1,13 @@
-// import express from "express";
-// import {notifcationController} from "../controllers/notificationController.js";
-// import auth from "../middlewares/auth.js";
+import express from "express";
+import {notifcationController} from "../controllers/notificationController.js";
+import auth from "../middlewares/auth.js";
 
-// const router = express.Router();
-// router.get("/get/:id",auth(["admin","user"]), notifcationController.getNotificationsById);
-// router.delete("/delete/:id",auth(["admin","user"]), notifcationController.deleteNotificationById);
-// router.post("/bulk-create", auth(["admin","user"]), notifcationController.bulkCreateNotifications);
-// router.delete("/bulk-delete", auth(["admin","user"]), notifcationController.bulkDeleteNotifications);
-// router.delete("/read/:id", auth(["admin","user"]), notifcationController.markAsReadNotification);
+const router = express.Router();
+router.post("/create", notifcationController.createNotification)
+router.get("/get",auth(["admin","user"]), notifcationController.getNotificationsById);
+router.delete("/delete/:id",auth(["admin","user"]), notifcationController.deleteNotificationById);
+router.patch("/read/:id", auth(["admin","user"]), notifcationController.markAsReadNotification);
+router.post("/bulk-create", auth(["admin","user"]), notifcationController.bulkCreateNotifications);
+router.delete("/bulk-delete", auth(["admin","user"]), notifcationController.bulkDeleteNotifications);
 
-// export default router;
+export default router;

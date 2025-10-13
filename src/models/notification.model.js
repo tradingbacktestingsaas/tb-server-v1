@@ -10,7 +10,7 @@ const Notification = sequelize.define(
       primaryKey: true,
     },
     userId: {
-      type: DataTypes.STRING, // varchar
+      type: DataTypes.UUID, // varchar
       allowNull: true,
     },
     type: {
