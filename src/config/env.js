@@ -117,6 +117,17 @@ const config = {
     resetLinkExpirationMinutes: envVars.JWT_RESET_LINK_EXPIRATION_MINUTES,
   },
 
+  recaptcha: {
+    siteKey: envVars.RECAPTCHA_SITE_KEY,
+    secretKey: envVars.RECAPTCHA_SECRET_KEY,
+  },
+
+  imageKit: {
+    publicKey: envVars.IMAGEKIT_PUBLIC_KEY,
+    privateKey: envVars.IMAGEKIT_PRIVATE_KEY,
+    urlEndpoint: envVars.IMAGEKIT_URL_ENDPOINT,
+  },
+
   email: {
     smtp: {
       host: envVars.SMTP_HOST,
@@ -129,10 +140,20 @@ const config = {
     from: envVars.EMAIL_FROM,
   },
 
+  google: {
+    clientId: envVars.GOOGLE_CLIENT_ID,
+    clientSecret: envVars.GOOGLE_CLIENT_SECRET,
+  },
+
   stripe: {
     secretKey: envVars.STRIPE_SECRET_KEY,
     webhookSecret: envVars.STRIPE_WEBHOOK_SECRET,
     currency: envVars.STRIPE_CURRENCY || "usd",
+  },
+
+  websocket: {
+    ws_cors_origin: envVars.WS_CORS_ORIGIN,
+    ws_path: envVars.WS_PATH,
   },
 };
 

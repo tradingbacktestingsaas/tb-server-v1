@@ -188,7 +188,7 @@ async function changePassword(userId, newPassword) {
     if (!user) {
       throw new Error("User not found");
     }
-    user.password = encrypt(newPassword);;
+    user.password = encrypt(newPassword);
     await user.save();
     return {
       message: "Password changed successfully",
@@ -201,6 +201,11 @@ async function changePassword(userId, newPassword) {
   }
 }
 
+export async function getAllUserIds() {
+  const users = await User.findAll({ attributes: ["id"], raw: true });
+  return users.map((u) => u.id);
+}
+
 export const usersService = {
   bulkCreateUsers,
   bulkDeleteUsers,
@@ -209,4 +214,5 @@ export const usersService = {
   updateUser,
   deleteUser,
   changePassword,
+  getAllUserIds,
 };

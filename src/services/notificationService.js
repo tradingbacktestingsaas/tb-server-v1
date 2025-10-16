@@ -1,6 +1,9 @@
 import { Op } from "sequelize";
 import Notification from "../models/notification.model.js";
 import { emitEvent } from "../websocket/emitter.js";
+import { getIO } from "../websocket/index.js";
+import { getAllUserIds } from "./usersService.js";
+import UserNotification from "../models/user_notification.model.js";
 
 export async function getNotificationsById(options = {}) {
   try {
@@ -41,68 +44,143 @@ export async function getNotificationsById(options = {}) {
   }
 }
 
-export async function createNotification(notificationDetail) {
+export async function getUserNotificationsById(options = {}) {
   try {
-    const notification = await Notification.create(notificationDetail, {
-      validate: true,
-      returning: true,
-    });
+    const { limit = 10, offset = 0, userId, type } = options;
 
-    if (!notification) {
-      throw new Error("notification not created");
+    if (!userId) {
+      throw new Error("userId is required to fetch notifications");
     }
 
-    if (notification.type === "system" || notification.type === "promo")
-      sendBroadcastNotification(notificationDetail, {
-        title: notificationDetail.title,
-        type: notificationDetail.type,
-        message: notificationDetail.message,
-      });
-    if (
-      notification.type === "info" ||
-      notification.type === "alert" ||
-      notification.type === "reminder"
-    )
-      sendUserNotification(notificationDetail.userId, notificationDetail, {
-        title: notificationDetail.title,
-        type: notificationDetail.type,
-        message: notificationDetail.message,
-      });
+    // Build query filters
+    const notificationWhere = {};
+    if (type) {
+      notificationWhere.type = type;
+    }
+
+    // Query UserNotification table and join Notification table
+    const { count, rows } = await UserNotification.findAndCountAll({
+      where: { userId },
+      include: [
+        {
+          model: Notification,
+          as: "notificationInfo", // ✅ must match your association alias
+          attributes: ["id", "title", "message", "type", "created_at"],
+          where: notificationWhere,
+        },
+      ],
+      attributes: ["id", "is_read", "viewed_at", "created_at", "updated_at"],
+      limit,
+      offset,
+      order: [["created_at", "DESC"]],
+    });
+
+    // Format response for cleaner output
+    const formatted = rows.map((row) => ({
+      id: row.notificationInfo.id,
+      title: row.notificationInfo.title,
+      message: row.notificationInfo.message,
+      type: row.notificationInfo.type,
+      is_read: row.is_read,
+      created_at: row.notificationInfo.created_at,
+    }));
 
     return {
-      message: "notification created successfully",
+      success: true,
+      message: "Notifications fetched successfully",
+      totalCount: count,
+      data: formatted,
+    };
+  } catch (error) {
+    console.error("❌ Error in getNotificationsById:", error);
+    throw new Error(`Failed to fetch notifications: ${error.message}`);
+  }
+}
+
+export async function createNotification(notificationDetail) {
+  try {
+    const notification = await Notification.create(notificationDetail);
+    if (!notification) throw new Error("notification not created");
+
+    const io = getIO();
+
+    if (["system", "promo"].includes(notification.type)) {
+      await sendBroadcastNotification(io, {
+        id: notification.id,
+        title: notification.title,
+        type: notification.type,
+        message: notification.message,
+      });
+    } else if (["info", "alert", "reminder"].includes(notification.type)) {
+      await sendUserNotification(io, notificationDetail?.userId, {
+        id: notification.id,
+        title: notification.title,
+        type: notification.type,
+        message: notification.message,
+      });
+    }
+
+    return {
+      message: "Notification created successfully",
       data: notification,
       success: true,
     };
   } catch (error) {
     console.error("Error in createNotification service:", error);
-    throw new Error(`Failed to create notification: ${error}`);
+    throw new Error(`Failed to create notification: ${error.message}`);
   }
 }
 
-export async function sendUserNotification(
-  io,
-  userId,
-  { title, type, message }
-) {
-  const notification = await Notification.create({
+export async function sendUserNotification(io, userId, notification) {
+  // Step 1: Create user-specific record
+  const userNotif = await UserNotification.create({
     userId,
-    title,
-    type,
-    message,
+    notificationId: notification?.id,
   });
-  emitEvent(io, `user:${userId}`, notification);
-  return notification;
+
+  // Step 2: Emit to that user's socket
+  emitEvent(io, `user:${userId}`, {
+    title: notification.title,
+    type: notification.type,
+    message: notification.message,
+    isRead: userNotif.isRead,
+  });
+
+  return userNotif;
 }
 
-export async function sendBroadcastNotification(io, { title, type, message }) {
-  const notification = await Notification.create({
-    userId: null,
-    title,
-    type,
-    message,
-  });
+export async function sendBroadcastNotification(io, notification) {
+  // Step 1: Emit to broadcast channel (real-time)
   emitEvent(io, "broadcast", notification);
+
+  // Step 2: Fetch all user IDs (from your User model)
+  const allUserIds = await getAllUserIds();
+  // Step 3: Batch insert for scalability
+  const batchSize = 1000;
+  let index = 0;
+
+  console.log("allUserIds:", allUserIds);
+  const processBatch = async () => {
+    const batch = allUserIds.slice(index, index + batchSize);
+    if (batch.length === 0) return;
+
+    const userNotifs = batch.map((userId) => ({
+      userId,
+      notificationId: notification.id, // Sequelize uses `id`, not `_id`
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+    console.log("userNotifs:", userNotifs);
+
+    // ✅ Sequelize equivalent of insertMany
+    await UserNotification.bulkCreate(userNotifs, { ignoreDuplicates: true });
+
+    index += batchSize;
+    setImmediate(processBatch); // Schedule next batch asynchronously
+  };
+
+  setImmediate(processBatch);
+
   return notification;
 }
 
@@ -129,34 +207,43 @@ export async function bulkCreateNotifications(notificationDetail) {
   }
 }
 
-export async function bulkDeleteNotifications(notificationId) {
+export async function bulkDeleteNotifications(notificationIds = [], userId) {
   try {
-    const notification = await Notification.destroy({
+    if (!userId) throw new Error("userId is required");
+    if (!Array.isArray(notificationIds) || notificationIds.length === 0)
+      throw new Error("No notification IDs provided");
+
+    const deletedCount = await UserNotification.destroy({
       where: {
-        id: {
-          [Op.in]: notificationId,
+        userId, // only delete this user's notifications
+        notificationId: {
+          [Op.in]: notificationIds,
         },
       },
     });
 
-    if (!notification) {
-      throw new Error("notification not found");
+    if (deletedCount === 0) {
+      return {
+        success: false,
+        message: "No notifications found or already deleted",
+        data: [],
+      };
     }
 
     return {
-      message: "notification deleted successfully",
-      data: notification,
       success: true,
+      message: "Notifications deleted successfully",
+      data: { deletedCount },
     };
   } catch (error) {
-    console.error("Error in deleteBulkNotification service:", error);
-    throw new Error(`Failed to delete notification: ${error}`);
+    console.error("❌ Error in bulkDeleteNotifications:", error);
+    throw new Error(`Failed to delete notifications: ${error.message}`);
   }
 }
 
 const deleteNotificationById = async (notificationId) => {
   try {
-    const notification = await Notification.findByPk(notificationId);
+    const notification = await UserNotification.findByPk(notificationId);
     if (!notification) {
       throw new Error("notification not found");
     }
@@ -174,7 +261,7 @@ const deleteNotificationById = async (notificationId) => {
 
 const markAsReadNotification = async (notifcationId) => {
   try {
-    const notification = await Notification.findByPk(notifcationId);
+    const notification = await UserNotification.findByPk(notifcationId);
     if (!notification) {
       throw new Error("notification not found");
     }
@@ -199,11 +286,36 @@ const markAsReadNotification = async (notifcationId) => {
   }
 };
 
+const markAllAsReadNotification = async (userId) => {
+  try {
+    const notifications = await UserNotification.findAll({
+      where: { userId: userId },
+    });
+
+    for (const notification of notifications) {
+      notification.is_read = true;
+      notification.viewed_at = new Date();
+      await notification.save();
+    }
+
+    return {
+      message: "notification updated successfully",
+      data: notifications,
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error in markAllAsReadNotification service:", error);
+    throw new Error(`Failed to update notification: ${error}`);
+  }
+};
+
 export const notificationService = {
   bulkCreateNotifications,
   bulkDeleteNotifications,
   createNotification,
+  getUserNotificationsById,
   getNotificationsById,
   deleteNotificationById,
   markAsReadNotification,
+  markAllAsReadNotification,
 };

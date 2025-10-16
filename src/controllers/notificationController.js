@@ -2,7 +2,7 @@ import { notificationService } from "../services/notificationService.js";
 
 const getNotificationsById = async (req, res) => {
   try {
-    const notification = await notificationService.getNotificationsById(
+    const notification = await notificationService.getUserNotificationsById(
       req.query
     );
     return res.status(201).json(notification);
@@ -49,7 +49,8 @@ const bulkCreateNotifications = async (req, res) => {
 const bulkDeleteNotifications = async (req, res) => {
   try {
     const notification = await notificationService.bulkDeleteNotifications(
-      req.body
+      req.body.ids,
+      req.body.userId
     );
     return res.status(201).json(notification);
   } catch (error) {
@@ -94,6 +95,22 @@ const markAsReadNotification = async (req, res) => {
   }
 };
 
+const markAllAsReadNotification = async (req, res) => {
+  try {
+    const notification = await notificationService.markAllAsReadNotification(
+      req.params.id
+    );
+    return res.status(201).json(notification);
+  } catch (error) {
+    return res.status(error.statusCode).json({
+      code: error.statusCode,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+
 export const notifcationController = {
   createNotification,
   getNotificationsById,
@@ -101,4 +118,5 @@ export const notifcationController = {
   bulkCreateNotifications,
   bulkDeleteNotifications,
   markAsReadNotification,
+  markAllAsReadNotification,
 };

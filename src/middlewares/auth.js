@@ -14,40 +14,52 @@ import Admin from "../models/admin.model.js";
  */
 const auth = (allowedRoles = [], options = {}) => {
   const { userAllowedMethods = [] } = options;
-
   return async (req, res, next) => {
+    console.log("=== VERIFY JWT DEBUG START ===");
+    console.log("req.headers.authorization:", req.headers.authorization);
+    console.log("req.cookies:", req.cookies);
+    console.log(
+      "process.env.JWT_SECRET:",
+      process.env.JWT_SECRET?.slice(0, 10)
+    ); // partial for safety
+    console.log("=== VERIFY JWT DEBUG END ===");
     try {
-      let token;
-      console.log(req?.cookies?.accessToken);
-      const authToken = req.headers.authorization;
-      if (authToken) {
-        token = authToken.split(" ")[1];
-      } else if (req.cookies && req.cookies.accessToken) {
-        token = req.cookies.accessToken;
+      const authHeader = req.headers.authorization;
+      const headerToken =
+        authHeader && authHeader.startsWith("Bearer ")
+          ? authHeader.split(" ")[1]
+          : null;
+
+      const cookieToken = req.cookies?.accessToken;
+
+      const token = headerToken || cookieToken;
+
+      if (!token) {
+        return res
+          .status(401)
+          .json({ success: false, message: "No token provided" });
       }
 
       if (!token) {
-        throw res.status(401).json({
-          code: 401,
+        return res.status(httpStatus.UNAUTHORIZED).json({
+          code: httpStatus.UNAUTHORIZED,
           success: false,
-          message: "Authentication Token is Required",
+          message: "Authentication token is required",
           data: null,
         });
       }
 
       // Verify token
       const decoded = jwt.verify(token, JWT_SECRET);
+      if (!decoded?.sub) {
+        throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid token payload");
+      }
 
-      // Determine if it's a user or admin token
-      let user = null;
-      let isAdmin = false;
+      // Look up user (admin first, then user)
+      let user = await Admin.findByPk(decoded.sub);
+      const isAdmin = !!user;
 
-      // First try to find in Admin table
-      user = await Admin.findByPk(decoded.sub);
-      if (user) {
-        isAdmin = true;
-      } else {
-        // If not an admin, try to find in User table
+      if (!user) {
         user = await User.findByPk(decoded.sub);
       }
 
@@ -55,44 +67,38 @@ const auth = (allowedRoles = [], options = {}) => {
         throw new ApiError(httpStatus.UNAUTHORIZED, "User not found");
       }
 
-      // Check if user is authorized for the route
-      if (allowedRoles.length > 0) {
-        // Admins have access to all routes
-        if (!isAdmin) {
-          // For non-admin users, check if their role is in the allowed roles
-          const userRole = user.role || "user";
-          if (!allowedRoles.includes(userRole)) {
-            throw new ApiError(
-              httpStatus.FORBIDDEN,
-              "Insufficient permissions"
-            );
-          }
+      // Authorization checks
+      if (allowedRoles.length && !isAdmin) {
+        const userRole = user.role || "user";
 
-          // Check if the HTTP method is allowed for users
-          if (
-            userAllowedMethods.length > 0 &&
-            !userAllowedMethods.includes(req.method)
-          ) {
-            throw new ApiError(
-              httpStatus.FORBIDDEN,
-              "This HTTP method is not allowed for your role"
-            );
-          }
+        if (!allowedRoles.includes(userRole)) {
+          throw new ApiError(httpStatus.FORBIDDEN, "Insufficient permissions");
+        }
+
+        if (
+          userAllowedMethods.length &&
+          !userAllowedMethods.includes(req.method)
+        ) {
+          throw new ApiError(
+            httpStatus.FORBIDDEN,
+            "This HTTP method is not allowed for your role"
+          );
         }
       }
 
-      // Add user and role information to request object
+      // Attach user info to request
       req.user = user;
       req.isAdmin = isAdmin;
-      next();
+
+      return next();
     } catch (error) {
       if (error.name === "TokenExpiredError") {
-        next(new ApiError(httpStatus.UNAUTHORIZED, "Token expired"));
-      } else if (error.name === "JsonWebTokenError") {
-        next(new ApiError(httpStatus.UNAUTHORIZED, "Invalid token"));
-      } else {
-        next(error);
+        return next(new ApiError(httpStatus.UNAUTHORIZED, "Token expired"));
       }
+      if (error.name === "JsonWebTokenError") {
+        return next(new ApiError(httpStatus.UNAUTHORIZED, "Invalid token"));
+      }
+      return next(error);
     }
   };
 };

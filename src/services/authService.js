@@ -1,9 +1,7 @@
-import { v4 as uuidv4 } from "uuid";
-import crypto, { randomUUID } from "crypto";
 import createError from "http-errors";
 import Admin from "../models/admin.model.js";
 import User from "../models/user.model.js";
-
+import { OAuth2Client } from "google-auth-library";
 import { hashPassword, comparePassword } from "../utils/hash.js";
 import {
   generateResetPasswordToken,
@@ -11,6 +9,9 @@ import {
   verifyToken,
 } from "../utils/jwt.js";
 import { sendPasswordResetEmail } from "../utils/email.js";
+import config from "../config/env.js";
+
+var googleClient = new OAuth2Client(config.google.clientId);
 
 export async function register(userDetail) {
   const existing = await User.findOne({ where: { email: userDetail.email } });
@@ -31,13 +32,27 @@ export async function register(userDetail) {
     },
     "1h"
   );
-  return { user: user, token, redirectUrl: process.env.FRONTEND_URL };
+  return { user: user, token, redirect: "/auth/signin" };
 }
 
 export async function login({ email, password }) {
-  let redirectUrl;
+  let redirect;
+
   const user = await User.findOne({
     where: { email, blocked: false, active: true },
+    attributes: [
+      "id",
+      "firstName",
+      "lastName",
+      "email",
+      "blocked",
+      "password",
+      "avatar_url",
+      "createdAt",
+      "updatedAt",
+      "role",
+      "plan",
+    ],
   });
   if (!user) throw createError(401, "Invalid credentials");
   const match = await comparePassword(password, user.password);
@@ -47,18 +62,119 @@ export async function login({ email, password }) {
       sub: user.id,
       email: user.email,
       role: user.role,
+      plan: user.plan,
+      blocked: user.blocked,
       type: "user",
     },
     "1h"
   );
+
+  const SignedInUser = {
+    id: user.id,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    role: user.role,
+    plan: user.plan,
+    blocked: user.blocked,
+    avatar_url: user.avatar_url,
+  };
+
   //if user has subscription then redirect to dashboard
   //if user doesn't have subscription then redirect to subscription page
-  redirectUrl = "/protected-route/dashboard";
+  redirect = "/dashboard";
 
   return {
-    user: { id: user.id, name: user.name, email: user.email },
+    user: SignedInUser,
     token,
-    redirectUrl,
+    redirect,
+  };
+}
+
+export async function googleLogin({ credential }) {
+  let token;
+
+  if (!credential)
+    return {
+      success: false,
+      message: "Google Credential missing",
+    };
+
+  const ticket = await googleClient.verifyIdToken({
+    idToken: credential,
+    audience: config.google.clientId,
+  });
+
+  if (ticket)
+    return {
+      success: false,
+      message: "Google Sign-In failed",
+    };
+
+  const payload = ticket.getPayload();
+  const { email, given_name, picture, family_name } = payload;
+
+  const user = await User.findOne({
+    where: { email: email },
+    attributes: [
+      "id",
+      "firstName",
+      "lastName",
+      "email",
+      "blocked",
+      "avatar_url",
+      "createdAt",
+      "updatedAt",
+      "role",
+      "plan",
+    ],
+  });
+
+  if (user) {
+    token = generateToken(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        plan: user.plan,
+        blocked: user.blocked,
+        type: "user",
+      },
+      "1h"
+    );
+    return {
+      success: true,
+      message: "Google Sign-In successful",
+      user: user,
+      token,
+    };
+  }
+
+  const passwordHash = await hashPassword(email);
+  const newUser = await User.create({
+    firstName: given_name,
+    lastName: family_name,
+    email: email,
+    password: passwordHash,
+    avatar_url: picture,
+  });
+  token = generateToken(
+    {
+      sub: newUser.id,
+      email: newUser.email,
+      role: newUser.role,
+      plan: newUser.plan,
+      blocked: newUser.blocked,
+      type: "user",
+    },
+    "1h"
+  );
+
+  return {
+    success: true,
+    message: "Google Sign-In successful",
+    user: newUser,
+    token: token,
   };
 }
 
@@ -90,19 +206,22 @@ export async function createPasswordResetToken(email) {
   return token;
 }
 
-export async function resetPassword({ email, token, newPassword }) {
-  const user = await User.findOne({ where: { email } });
-  if (!user) throw createError(400, "User Not Found");
+export async function resetPassword({ token, password }) {
+  if (!token) throw createError(400, "No Token Provided");
 
   const payload = await verifyToken(token);
-  console.log(payload);
+
   if (payload.purpose !== "password_reset")
     throw createError(400, "Purpose Invalid");
+  console.log(payload);
+
+  const user = await User.findByPk(payload.sub);
+  if (!user) throw createError(400, "User Not Found");
 
   if (payload.rv !== user.passwordResetVersion)
     throw createError(400, "Version Invalid");
 
-  const passwordHash = await hashPassword(newPassword);
+  const passwordHash = await hashPassword(password);
   user.password = passwordHash;
   user.passwordResetVersion += 1;
   await user.save(user);
@@ -197,6 +316,7 @@ export async function adminLogin({ email, password }) {
 export const authService = {
   register,
   login,
+  googleLogin,
   createPasswordResetToken,
   forgotPassword,
   resetPassword,

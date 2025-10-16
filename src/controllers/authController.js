@@ -1,11 +1,13 @@
+import config from "../config/env.js";
 import { authService } from "../services/authService.js";
 
 const register = async (req, res) => {
   try {
-    const user = await authService.register(req.body);
+    const { user, redirect } = await authService.register(req.body);
     return res.status(201).json({
       code: 201,
       success: true,
+      redirect: redirect,
       message: "User registered successfully",
       data: user,
     });
@@ -14,6 +16,7 @@ const register = async (req, res) => {
       code: 400,
       success: false,
       message: error.message,
+      redirect: null,
       data: null,
     });
   }
@@ -23,28 +26,75 @@ const login = async (req, res) => {
   try {
     const response = await authService.login(req.body);
     const isProd = process.env.NODE_ENV === "production";
-    const domain = isProd ? "tradingbacktesting.com" : "localhost";
     res.cookie("accessToken", response.token, {
-      domain: domain,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
-      maxAge: 1000 * 60 * 60 * 24 * 7,
+      httpOnly: true,
+      // In dev: DO NOT set domain. In prod: set your parent domain for subdomains.
+      domain: isProd ? "tradingbacktesting.com" : "localhost",
       path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+
+      // Cookie site policy:
+      // - If using same-origin dev (Next proxy to API): Lax is fine over HTTP
+      // - If cross-site (different ports) OR you want cross-subdomain in prod: use None + Secure
+      sameSite: isProd ? "none" : "lax",
+      secure: isProd, // must be true when sameSite === 'none'
     });
 
     return res.status(200).json({
       code: 200,
       success: true,
-      message: "Login successful",
-      data: response.data,
-      redirectTo: response.redirectTo,
+      message: "Signin successful",
+      data: response?.user,
+      redirect: response?.redirect,
     });
   } catch (error) {
     return res.status(400).json({
       code: 400,
       success: false,
       message: error.message,
+      jwt: null,
       data: null,
+      redirect: null,
+    });
+  }
+};
+
+const googleLogin = async (req, res) => {
+  try {
+    console.log(req);
+    console.log(req.body);
+    const response = await authService.googleLogin(req.body);
+    const isProd = process.env.NODE_ENV === "production";
+    res.cookie("accessToken", response.token, {
+      httpOnly: true,
+      // In dev: DO NOT set domain. In prod: set your parent domain for subdomains.
+      domain: isProd ? "tradingbacktesting.com" : "localhost",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+
+      // Cookie site policy:
+      // - If using same-origin dev (Next proxy to API): Lax is fine over HTTP
+      // - If cross-site (different ports) OR you want cross-subdomain in prod: use None + Secure
+      sameSite: isProd ? "none" : "lax",
+      secure: isProd, // must be true when sameSite === 'none'
+    });
+
+    return res.status(200).json({
+      code: 200,
+      success: true,
+      jwt: response?.token,
+      message: "Login successful with Google",
+      data: response?.data,
+      redirect: response?.redirect,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      code: 400,
+      success: false,
+      message: error.message,
+      jwt: null,
+      data: null,
+      redirect: null,
     });
   }
 };
@@ -104,14 +154,18 @@ const adminRegister = async (req, res) => {
 const adminLogin = async (req, res) => {
   try {
     const response = await authService.adminLogin(req.body);
-    const isProd = process.env.NODE_ENV === "production";
-    const domain = isProd ? "tradingbacktesting.com" : "localhost";
+    const isProd = config.env === "production";
     res.cookie("accessToken", response.token, {
-      domain: domain,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
-      maxAge: 1000 * 60 * 60 * 24 * 7,
+      httpOnly: true,
+      // In dev: DO NOT set domain. In prod: set your parent domain for subdomains.
+      domain: isProd ? ".tradingbacktesting.com" : undefined,
       path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      // Cookie site policy:
+      // - If using same-origin dev (Next proxy to API): Lax is fine over HTTP
+      // - If cross-site (different ports) OR you want cross-subdomain in prod: use None + Secure
+      sameSite: isProd ? "none" : "lax",
+      secure: isProd, // must be true when sameSite === 'none'
     });
     return res.status(200).json({
       code: 200,
@@ -129,6 +183,46 @@ const adminLogin = async (req, res) => {
   }
 };
 
+const verifyUserJWT = async (req, res) => {
+  try {
+    const user = req?.user;
+
+    if (!user) {
+      return res.status(401).json({
+        code: 401,
+        success: false,
+        message: "User not verified or token invalid",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      code: 200,
+      success: true,
+      message: "User verified successfully",
+      data: {
+        id: user?.id,
+        firstName: user?.firstName,
+        lastName: user?.lastName,
+        email: user?.email,
+        role: user?.role,
+        plan: user?.plan,
+        avatar_url: user?.avatar_url,
+        activeTradeAccountId: user?.activeTradeAccountId,
+        blocked: user?.blocked,
+      },
+    });
+  } catch (error) {
+    console.error("JWT Verification Error:", error);
+    return res.status(error?.statusCode || 500).json({
+      code: error?.statusCode || 500,
+      success: false,
+      message: error?.message || "Internal server error during verification",
+      data: null,
+    });
+  }
+};
+
 export const authController = {
   register,
   login,
@@ -136,4 +230,6 @@ export const authController = {
   resetPassword,
   adminRegister,
   adminLogin,
+  verifyUserJWT,
+  googleLogin,
 };

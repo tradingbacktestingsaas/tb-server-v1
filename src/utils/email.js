@@ -57,7 +57,7 @@ const sendEmail = async (to, subject, text, html) => {
  * @returns {Promise}
  */
 const sendVerificationEmail = async (to, token) => {
-  const verificationUrl = `${config.frontendUrl}/verify-email?token=${token}`;
+  const verificationUrl = `${config.frontendUrl}/auth/verify-email?token=${token}`;
   const subject = 'Email Verification';
   const text = `Please verify your email by clicking: ${verificationUrl}`;
   const html = `
@@ -84,7 +84,7 @@ const sendVerificationEmail = async (to, token) => {
  * @returns {Promise}
  */
 const sendPasswordResetEmail = async (to, token) => {
-  const resetUrl = `${config.frontendUrl}/reset-password?token=${token}`;
+  const resetUrl = `${config.frontendUrl}/auth/reset-password?token=${token}`;
   const subject = 'Password Reset Request';
   const text = `To reset your password, click: ${resetUrl}`;
   const html = `
