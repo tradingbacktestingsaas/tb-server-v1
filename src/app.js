@@ -22,7 +22,9 @@ const globalPrefix = "/public/api/v1";
 
 const allowedOrigins = [
   "https://tradingbacktesting.com",
-  "https://admin.woowsocial.com",
+  "https://app.tradingbacktesting.com",
+  "https://dev.tradingbacktesting.com",
+  "https://tb-client-v1.vercel.app",
   "http://localhost:3000",
   "http://localhost:8080",
   "http://localhost:5000",

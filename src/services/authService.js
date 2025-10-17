@@ -92,7 +92,7 @@ export async function login({ email, password }) {
 }
 
 export async function googleLogin({ credential }) {
-  let token;
+  let token;  
 
   if (!credential)
     return {
@@ -103,12 +103,13 @@ export async function googleLogin({ credential }) {
   const ticket = await googleClient.verifyIdToken({
     idToken: credential,
     audience: config.google.clientId,
-  });
+  }); 
 
-  if (ticket)
+  if (!ticket)
     return {
       success: false,
       message: "Google Sign-In failed",
+      data: null,
     };
 
   const payload = ticket.getPayload();

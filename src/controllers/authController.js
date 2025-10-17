@@ -61,8 +61,6 @@ const login = async (req, res) => {
 
 const googleLogin = async (req, res) => {
   try {
-    console.log(req);
-    console.log(req.body);
     const response = await authService.googleLogin(req.body);
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("accessToken", response.token, {
@@ -83,7 +81,7 @@ const googleLogin = async (req, res) => {
       code: 200,
       success: true,
       jwt: response?.token,
-      message: "Login successful with Google",
+      message: response?.message,
       data: response?.data,
       redirect: response?.redirect,
     });
