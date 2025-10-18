@@ -4,6 +4,47 @@ import config from '../config/env.js';
 // Initialize Stripe with the API key
 const stripe = new Stripe(config.stripe.secretKey);
 
+// Customer helpers
+const getOrCreateCustomerByEmail = async (email, name = null) => {
+  const existing = await stripe.customers.list({ email, limit: 1 });
+  if (existing.data && existing.data.length > 0) return existing.data[0];
+  const customer = await stripe.customers.create({ email, name: name || undefined });
+  return customer;
+};
+
+const attachPaymentMethodToCustomer = async (paymentMethodId, customerId) => {
+  await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId });
+  await stripe.customers.update(customerId, {
+    invoice_settings: { default_payment_method: paymentMethodId },
+  });
+  return true;
+};
+
+// Create a recurring price on the fly and a subscription
+const createRecurringPrice = async ({ unitAmountCents, currency = 'usd', productName, interval = 'month' }) => {
+  const price = await stripe.prices.create({
+    unit_amount: unitAmountCents,
+    currency,
+    recurring: { interval },
+    product_data: { name: productName },
+  });
+  return price;
+};
+
+const createSubscription = async ({ customerId, priceId, paymentMethodId }) => {
+  const subscription = await stripe.subscriptions.create({
+    customer: customerId,
+    items: [{ price: priceId }],
+    payment_settings: {
+      save_default_payment_method: 'on_subscription',
+      payment_method_types: ['card'],
+    },
+    default_payment_method: paymentMethodId,
+    expand: ['latest_invoice.payment_intent', 'latest_invoice'],
+  });
+  return subscription;
+};
+
 /**
  * Create a payment method with Stripe
  * @param {Object} paymentData - Payment method data
@@ -140,6 +181,10 @@ const stripeService = {
   retrievePaymentMethod,
   processPayment,
   createRefund,
+  getOrCreateCustomerByEmail,
+  attachPaymentMethodToCustomer,
+  createRecurringPrice,
+  createSubscription,
 };
 
 export default stripeService;

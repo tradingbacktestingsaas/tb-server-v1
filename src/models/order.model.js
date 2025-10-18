@@ -74,6 +74,11 @@ const Order = sequelize.define(
       allowNull: true,
       field: "hosted_invoice_url",
     },
+    provider_sub_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "provider_sub_id",
+    },
   },
   {
     tableName: "order",
