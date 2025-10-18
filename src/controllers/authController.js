@@ -66,7 +66,7 @@ const googleLogin = async (req, res) => {
     res.cookie("accessToken", response.token, {
       httpOnly: true,
       // In dev: DO NOT set domain. In prod: set your parent domain for subdomains.
-      domain: isProd ? "tradingbacktesting.com" : "localhost",
+      domain: isProd ? ".tradingbacktesting.com" : "localhost",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
 

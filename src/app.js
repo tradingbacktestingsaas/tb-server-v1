@@ -16,6 +16,7 @@ import tradeAccRoutes from "./routes/tradeAccRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import tradeRoutes from "./routes/tradeRoutes.js";
 import strategiesRoutes from "./routes/strategiesRoutes.js";
+import newsRoutes from "./routes/newsRoutes.js";
 
 const app = express();
 const globalPrefix = "/public/api/v1";
@@ -37,7 +38,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-recaptcha-token"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-recaptcha-token", "x-recaptcha-token"],
 };
 
 app.use(cors(corsOptions));
@@ -63,6 +64,7 @@ app.use(`${globalPrefix}/trade-account`, tradeAccRoutes);
 app.use(`${globalPrefix}/trade`, tradeRoutes);
 app.use(`${globalPrefix}/strategies`, strategiesRoutes);
 app.use(`${globalPrefix}/notification`, notificationRoutes);
+app.use(`${globalPrefix}/news`, newsRoutes);
 
 app.use((req, res, next) => {
   next(new ApiError(httpStatus.NOT_FOUND, "Not found"));
