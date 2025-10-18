@@ -1,26 +1,35 @@
-import nodemailer from 'nodemailer';
-import config from '../config/env.js';
-import logger from './logger.js';
+import nodemailer from "nodemailer";
+import config from "../config/env.js";
+import logger from "./logger.js";
 
 const { email } = config;
+const port = Number(email.smtp.port);
+const isImplicitTLS = port === 465;
 
 // Create a SMTP transporter
 const transporter = nodemailer.createTransport({
   host: email.smtp.host,
-  port: email.smtp.port,
-  secure: email.smtp.port === 587, // true for 587, false for other ports
+  port: port,
+  secure: false, // true for 587, false for other ports
   auth: {
     user: email.smtp.auth.user,
     pass: email.smtp.auth.pass,
   },
+  requireTLS: !isImplicitTLS, // ✅ on 587 enforce STARTTLS
+  tls: { minVersion: "TLSv1.2" }, // modern TLS only
+  pool: true,
+  maxConnections: 3,
+  maxMessages: 100,
+  logger: true, // nodemailer logs SMTP convo
+  debug: true,
 });
 
 // Verify connection configuration
 transporter.verify((error) => {
   if (error) {
-    logger.error('Error with mail configuration:', error);
+    logger.error("Error with mail configuration:", error);
   } else {
-    logger.info('Server is ready to take our messages');
+    logger.info("Server is ready to take our messages");
   }
 });
 
@@ -45,8 +54,8 @@ const sendEmail = async (to, subject, text, html) => {
     await transporter.sendMail(msg);
     logger.info(`Email sent to ${to}`);
   } catch (error) {
-    logger.error('Error sending email:', error);
-    throw new Error('Failed to send email');
+    logger.error("Error sending email:", error);
+    throw new Error("Failed to send email");
   }
 };
 
@@ -58,7 +67,7 @@ const sendEmail = async (to, subject, text, html) => {
  */
 const sendVerificationEmail = async (to, token) => {
   const verificationUrl = `${config.frontendUrl}/auth/verify-email?token=${token}`;
-  const subject = 'Email Verification';
+  const subject = "Email Verification";
   const text = `Please verify your email by clicking: ${verificationUrl}`;
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -85,7 +94,7 @@ const sendVerificationEmail = async (to, token) => {
  */
 const sendPasswordResetEmail = async (to, token) => {
   const resetUrl = `${config.frontendUrl}/auth/reset-password?token=${token}`;
-  const subject = 'Password Reset Request';
+  const subject = "Password Reset Request";
   const text = `To reset your password, click: ${resetUrl}`;
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">

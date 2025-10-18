@@ -99,16 +99,16 @@ const googleLogin = async (req, res) => {
 
 const forgotPassword = async (req, res) => {
   try {
-    const message = await authService.forgotPassword(req.body.email);
+    const reponse = await authService.forgotPassword(req.body.email);
     return res.status(200).json({
       code: 200,
-      success: true,
-      message: "Password reset email sent successfully",
-      data: message,
+      success: reponse.success,
+      message: reponse.message,
+      data: reponse.token,
     });
   } catch (error) {
     return res.status(400).json({
-      code: 400,
+      code: error.statusCode,
       success: false,
       message: error.message,
       data: null,
