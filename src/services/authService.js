@@ -78,6 +78,7 @@ export async function login({ email, password }) {
     plan: user.plan,
     blocked: user.blocked,
     avatar_url: user.avatar_url,
+    activeTradeAccountId: user.activeTradeAccountId,
   };
 
   //if user has subscription then redirect to dashboard
@@ -92,7 +93,7 @@ export async function login({ email, password }) {
 }
 
 export async function googleLogin({ credential }) {
-  let token;  
+  let token;
 
   if (!credential)
     return {
@@ -103,7 +104,7 @@ export async function googleLogin({ credential }) {
   const ticket = await googleClient.verifyIdToken({
     idToken: credential,
     audience: config.google.clientId,
-  }); 
+  });
 
   if (!ticket)
     return {
@@ -146,7 +147,7 @@ export async function googleLogin({ credential }) {
     return {
       success: true,
       message: "Google Sign-In successful",
-      user: user,
+      data: user,
       token,
     };
   }
@@ -174,7 +175,7 @@ export async function googleLogin({ credential }) {
   return {
     success: true,
     message: "Google Sign-In successful",
-    user: newUser,
+    data: newUser,
     token: token,
   };
 }
@@ -182,9 +183,13 @@ export async function googleLogin({ credential }) {
 export async function forgotPassword(email) {
   const user = await User.findOne({ where: { email: email } });
   if (!user) throw createError(400, "Invalid request");
-  const token = await createPasswordResetToken(email);
+  const { token, success, message } = await createPasswordResetToken(email);
   if (!token) throw createError(400, "Invalid request");
-  return { token };
+  return {
+    token,
+    success,
+    message,
+  };
 }
 
 export async function createPasswordResetToken(email) {
@@ -202,9 +207,21 @@ export async function createPasswordResetToken(email) {
     purpose: "password_reset",
   };
 
-  const token = await generateResetPasswordToken(payload);
-  await sendPasswordResetEmail(user.email, token);
-  return token;
+  const token = generateResetPasswordToken(payload);
+  const sentEmail = await sendPasswordResetEmail(user.email, token);
+
+  if (!sentEmail)
+    return {
+      success: false,
+      token: null,
+      message: "Failed to sent email",
+    };
+
+  return {
+    token,
+    success: true,
+    message: "Email sent successfully",
+  };
 }
 
 export async function resetPassword({ token, password }) {

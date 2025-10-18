@@ -140,6 +140,10 @@ const config = {
     from: envVars.EMAIL_FROM,
   },
 
+  actionForex: {
+    apiUrl: envVars.ACTIONFOREX_API_URL,
+  },
+
   google: {
     clientId: envVars.GOOGLE_CLIENT_ID,
     clientSecret: envVars.GOOGLE_CLIENT_SECRET,

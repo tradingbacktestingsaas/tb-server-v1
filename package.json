@@ -9,6 +9,8 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@nlpjs/lang-en-min": "^5.0.0-alpha.5",
+    "@nlpjs/sentiment": "^5.0.0-alpha.5",
     "audit": "^0.0.6",
     "aws-sdk": "^2.1560.0",
     "axios": "^1.12.2",
@@ -32,6 +34,8 @@
     "nodemailer": "^7.0.9",
     "pino": "^9.2.0",
     "pino-pretty": "^11.2.2",
+    "rss-parser": "^3.13.0",
+    "sentiment": "^5.0.1",
     "sequelize": "^6.37.3",
     "sequelize-cockroachdb": "^6.0.5",
     "socket.io": "^4.8.1",
