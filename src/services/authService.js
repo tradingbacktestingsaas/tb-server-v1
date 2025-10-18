@@ -199,7 +199,7 @@ export async function createPasswordResetToken(email) {
   user.passwordResetVersion += 1;
   await user.save();
 
-  const jti = user.passwordResetVersion;
+  const jti = user.passwordResetVersion
   const payload = {
     sub: user.id,
     rv: user.passwordResetVersion,
@@ -208,7 +208,7 @@ export async function createPasswordResetToken(email) {
   };
 
   const token = generateResetPasswordToken(payload);
-  await sendPasswordResetEmail(user.email, token);
+   await sendPasswordResetEmail(user.email, token);
 
   return {
     token,
@@ -238,7 +238,6 @@ export async function resetPassword({ token, password }) {
   await user.save(user);
   return true;
 }
-
 
 export async function adminRegister({
   first_name,
