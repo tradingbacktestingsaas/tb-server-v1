@@ -106,6 +106,7 @@ export async function subscribe(subscriptionDetails) {
       invoiceId: invoiceId,
       hostedInvoiceUrl: hostedInvoiceUrl,
       provider_sub_id: stripeSub.id,
+      order_type: "subscription",
     };
 
     const order = await Order.create(orderPayload);

@@ -127,7 +127,7 @@ const retrievePaymentMethod = async (paymentMethodId) => {
  */
 const processPayment = async (paymentData) => {
   try {
-    const { amount, currency, payment_method, description, customer_email } = paymentData;
+    const { amount, currency, payment_method, description, customer_email, customerId } = paymentData;
     
     // Create a payment intent and confirm it immediately
     const paymentIntent = await stripe.paymentIntents.create({
@@ -139,9 +139,9 @@ const processPayment = async (paymentData) => {
       receipt_email: customer_email,
       return_url: 'https://woowsocial.com/order/success', // URL to redirect after payment
       off_session: true, // Since we're charging without customer action
-      confirm_method: 'automatic',
       payment_method_types: ['card'],
       capture_method: 'automatic',
+      ...(customerId ? { customer: customerId } : {}),
     });
     
     return {

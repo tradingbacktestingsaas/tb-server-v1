@@ -1,4 +1,8 @@
 import Strategies from "../models/strategies.model.js";
+import UserSubscription from "../models/user_subscription.model.js";
+import Order from "../models/order.model.js";
+import Users from "../models/user.model.js";
+import stripeService from "./stripeService.js";
 import { Op, Sequelize, where } from "sequelize";
 
 export async function createStrategies(strategiesDetails) {
@@ -129,9 +133,104 @@ export async function deleteStrategies(body) {
   }
 }
 
+export async function buyStrategy(body) {
+  try {
+    const userId = body.userId || body.user_id;
+    const strategyId = body.strategyId || body.id; // support body.id as strategy id per existing pattern
+    const paymentMethodId = body.paymentMethodId;
+
+    if (!userId || !strategyId || !paymentMethodId) {
+      return {
+        code: 400,
+        message: "Missing required fields: userId, strategyId, paymentMethodId",
+        success: false,
+        data: null,
+      };
+    }
+
+    const [user, strategy] = await Promise.all([
+      Users.findByPk(userId),
+      Strategies.findByPk(strategyId),
+    ]);
+
+    if (!user) {
+      return { code: 404, message: "User not found", success: false, data: null };
+    }
+    if (!strategy) {
+      return { code: 404, message: "Strategy not found", success: false, data: null };
+    }
+    if (!strategy.hasPrice || !strategy.price) {
+      return { code: 400, message: "Strategy is not purchasable", success: false, data: null };
+    }
+
+    // Compute amount in cents
+    const amountCents = Math.round(Number(strategy.price) * 100);
+    const currency = String(strategy.currency || 'USD').toLowerCase();
+
+    // Ensure a Stripe customer exists and the payment method is associated
+    const customer = await stripeService.getOrCreateCustomerByEmail(
+      user.email,
+      [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined
+    );
+    try {
+      await stripeService.attachPaymentMethodToCustomer(paymentMethodId, customer.id);
+    } catch (e) {
+      // Ignore if it's already attached to this customer
+    }
+
+    // Process payment with Stripe using Payment Intents (confirm immediately)
+    const payment = await stripeService.processPayment({
+      amount: amountCents,
+      currency,
+      payment_method: paymentMethodId,
+      customerId: customer.id,
+      description: `Purchase strategy: ${strategy.title}`,
+      customer_email: user.email,
+    });
+
+    const isPaid = payment.status === 'succeeded';
+
+    // Create Order entry; set requested fields to null per instruction
+    const orderPayload = {
+      userId: user.id,
+      planId: null,
+      planCode: null,
+      amountSubtotalCents: amountCents,
+      amountDiscountCents: 0,
+      amountTotalCents: amountCents,
+      currency: String(strategy.currency || 'USD').toUpperCase(),
+      provider: null,
+      providerCheckoutSessionId: null,
+      status: isPaid ? 'paid' : 'failed',
+      couponId: null,
+      invoiceId: null,
+      hostedInvoiceUrl: null,
+      provider_sub_id: null,
+      order_type: 'strategy',
+      strategyId: strategy.id,
+    };
+
+    const order = await Order.create(orderPayload);
+
+    return {
+      code: 200,
+      message: isPaid ? 'Strategy purchased successfully' : 'Payment failed',
+      success: isPaid,
+      data: {
+        order,
+        payment,
+      },
+    };
+  } catch (error) {
+    console.error("Error in buyStrategy service:", error);
+    throw new Error(`Failed to buy strategy: ${error}`);
+  }
+}
+
 export const strategiesService = {
   createStrategies,
   getStrategies,
   updateStrategies,
   deleteStrategies,
+  buyStrategy,
 };

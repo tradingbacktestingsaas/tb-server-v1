@@ -14,7 +14,7 @@ const UserSubscription = sequelize.define(
       allowNull: true, // assuming a foreign key to a plans table
     },
     plan_code: {
-      type: DataTypes.STRING(16),
+      type: DataTypes.STRING(16), // e.g., "STANDARD", "ELITE", "FREE"
       allowNull: false,
     },
     status: {

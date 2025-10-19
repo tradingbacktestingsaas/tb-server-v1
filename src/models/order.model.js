@@ -79,6 +79,16 @@ const Order = sequelize.define(
       allowNull: true,
       field: "provider_sub_id",
     },
+    orderType: {
+      type: DataTypes.STRING(32),
+      allowNull: true,
+      field: "order_type",
+    },
+    strategyId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: "strategyid",
+    },
   },
   {
     tableName: "order",
