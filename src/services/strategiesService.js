@@ -36,6 +36,7 @@ export async function getStrategies(query = {}) {
       type,
       isPremium,
       userId,
+      purchaser_user_id,
     } = query;
 
     const whereClause = {};
@@ -60,11 +61,35 @@ export async function getStrategies(query = {}) {
       order,
     });
 
+    // Determine purchased strategies for the requesting user (if provided)
+    let purchasedStrategyIds = new Set();
+    if (purchaser_user_id) {
+      const userOrders = await Order.findAll({
+        attributes: ["strategyId"],
+        where: {
+          userId: purchaser_user_id,
+          orderType: "strategy",
+          status: "paid",
+        },
+      });
+      purchasedStrategyIds = new Set(
+        userOrders
+          .map((o) => o?.strategyId)
+          .filter((sid) => !!sid)
+      );
+    }
+
+    const dataWithPurchase = rows.map((s) => {
+      const json = s.toJSON();
+      json.is_purchase = purchasedStrategyIds.has(json.id);
+      return json;
+    });
+
     return {
       code: 200,
       message: "Strategies fetched successfully",
       success: true,
-      data: rows,
+      data: dataWithPurchase,
       pagination: {
         total: count,
         page: pageNum,
