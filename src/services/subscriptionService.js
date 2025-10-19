@@ -34,6 +34,32 @@ export async function subscribe(subscriptionDetails) {
       return { code: 404, success: false, message: "Plan not found", data: null };
     }
 
+    // Check for existing active subscription for this user and cancel it before creating a new one
+    const existingActive = await UserSubscription.findOne({
+      where: {
+        userId: user.id,
+        status: "active",
+      },
+    });
+
+    if (existingActive && existingActive.provider_sub_id) {
+      try {
+        console.log("Canceling existing active subscription:", existingActive.provider_sub_id);
+        await stripeService.cancelSubscription({
+          subscriptionId: existingActive.provider_sub_id,
+          cancelAtPeriodEnd: false,
+        });
+      } catch (e) {
+        console.error("Stripe cancel subscription failed:", e?.message || e);
+      }
+      // Mark local record as canceled
+      await existingActive.update({
+        status: "canceled",
+        auto_renew: false,
+        current_period_end: new Date(),
+      });
+    }
+
     // Create/Get customer in Stripe
     const customer = await stripeService.getOrCreateCustomerByEmail(
       user.email,
@@ -100,7 +126,13 @@ export async function subscribe(subscriptionDetails) {
       auto_renew: true,
     };
 
-    const userSubscription = await UserSubscription.create(userSubscriptionPayload);
+    // Upsert user subscription: update existing for this user, or create new if none exists
+    let userSubscription = await UserSubscription.findOne({ where: { userId: user.id } });
+    if (userSubscription) {
+      await userSubscription.update(userSubscriptionPayload);
+    } else {
+      userSubscription = await UserSubscription.create(userSubscriptionPayload);
+    }
 
     // Update user plan field with plan code
     await Users.update({ plan: plan.code }, { where: { id: user.id } });

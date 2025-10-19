@@ -45,6 +45,17 @@ const createSubscription = async ({ customerId, priceId, paymentMethodId }) => {
   return subscription;
 };
 
+// Cancel a subscription (immediately or at period end)
+const cancelSubscription = async ({ subscriptionId, cancelAtPeriodEnd = false }) => {
+  if (!subscriptionId) {
+    throw new Error('subscriptionId is required to cancel a subscription');
+  }
+  if (cancelAtPeriodEnd) {
+    return await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true });
+  }
+  return await stripe.subscriptions.cancel(subscriptionId);
+};
+
 /**
  * Create a payment method with Stripe
  * @param {Object} paymentData - Payment method data
@@ -185,6 +196,7 @@ const stripeService = {
   attachPaymentMethodToCustomer,
   createRecurringPrice,
   createSubscription,
+  cancelSubscription,
 };
 
 export default stripeService;
