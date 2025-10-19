@@ -24,15 +24,15 @@ const UserSubscription = sequelize.define(
     },
     start_date: {
       type: DataTypes.DATE,
-      allowNull: false,
+      allowNull: true,
     },
     current_period_end: {
       type: DataTypes.DATE,
-      allowNull: false,
+      allowNull: true,
     },
     provider: {
       type: DataTypes.STRING(16), // e.g. "stripe", "paypal"
-      allowNull: false,
+      allowNull: true,
     },
     provider_sub_id: {
       type: DataTypes.STRING,

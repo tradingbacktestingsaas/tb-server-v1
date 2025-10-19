@@ -3,6 +3,7 @@ import Plans from "../models/plan.model.js";
 import Users from "../models/user.model.js";
 import Order from "../models/order.model.js";
 import stripeService from "./stripeService.js";
+import { createFreeTradeAcc } from "./tradeAccService.js";
 import { Op, Sequelize, where } from "sequelize";
 
 export async function subscribe(subscriptionDetails) {
@@ -159,7 +160,81 @@ export async function subscribe(subscriptionDetails) {
   }
 }
 
+export async function createFreeSubscription(freeSubscriptionDetails) {
+  try {
+    const userId = freeSubscriptionDetails.user_id || freeSubscriptionDetails.userId;
+    const planId = freeSubscriptionDetails.plan_id || freeSubscriptionDetails.planId;
 
+    if (!userId || !planId) {
+      return {
+        code: 400,
+        success: false,
+        message: "Missing required fields: userId, planId",
+        data: null,
+      };
+    }
+
+    const [user, plan] = await Promise.all([
+      Users.findByPk(userId),
+      Plans.findByPk(planId),
+    ]);
+
+    if (!user) {
+      return { code: 404, success: false, message: "User not found", data: null };
+    }
+    if (!plan) {
+      return { code: 404, success: false, message: "Plan not found", data: null };
+    }
+
+    // Prepare free subscription payload
+    const now = new Date();
+    const freeSubPayload = {
+      userId: user.id,
+      planid: plan.id,
+      plan_code: plan.code,
+      status: "active",
+      start_date: now,
+      current_period_end: null, // free plan -> no expiry period end
+      provider: null,
+      provider_sub_id: null,
+      auto_renew: false,
+    };
+
+    // Upsert by user: update existing record for this user, else create new
+    let userSubscription = await UserSubscription.findOne({ where: { userId: user.id } });
+    if (userSubscription) {
+      await userSubscription.update(freeSubPayload);
+    } else {
+      userSubscription = await UserSubscription.create(freeSubPayload);
+    }
+
+    // Update user's plan field to plan.code
+    await Users.update({ plan: plan.code }, { where: { id: user.id } });
+
+    // Create a FREE Trade Account for the user with random ACC_ prefixed accountId
+    let tradeAcc = null;
+    try {
+      const result = await createFreeTradeAcc(user.id);
+      tradeAcc = result?.data || null;
+    } catch (e) {
+      console.error("Failed to create free trade account:", e?.message || e);
+    }
+
+    return {
+      code: 201,
+      success: true,
+      message: "Free subscription created successfully",
+      data: {
+        subscription: userSubscription,
+        tradeAccount: tradeAcc,
+      },
+    };
+  } catch (error) {
+    console.error("Error in createFreeSubscription service:", error);
+    throw new Error(`Failed to create free subscription: ${error}`);
+  }
+}
 export const subscriptionService = {
   subscribe,
+  createFreeSubscription,
 };
