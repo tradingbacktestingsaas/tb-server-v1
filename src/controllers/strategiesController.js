@@ -52,9 +52,23 @@ const deleteStrategies = async (req, res) => {
   }
 };
 
+const buyStrategy = async (req, res) => {
+  try {
+    const strategies = await strategiesService.buyStrategy(req.body);
+    return res.status(200).json(strategies);
+  } catch (error) {
+    return res.status(error.code || 500).json({
+      code: error.code || 500,
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
 export const strategiesController = {
   createStrategies,
   getStrategies,
   updateStrategies,
   deleteStrategies,
+  buyStrategy,
 };

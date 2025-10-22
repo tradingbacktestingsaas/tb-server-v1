@@ -8,7 +8,6 @@ export async function createTradeAcc(accDetails) {
     if (!accDetails) {
       throw new Error("Trade account details not found");
     }
-
     accDetails.investor_password = encrypt(accDetails.investor_password);
 
     const tradeAcc = await TradeAcc.create(accDetails);
@@ -23,6 +22,40 @@ export async function createTradeAcc(accDetails) {
   } catch (error) {
     console.error("Error in createTradeAcc service:", error);
     throw new Error(`Failed to create trade account: ${error}`);
+  }
+}
+
+export async function createFreeTradeAcc(userId) {
+  try {
+    if (!userId) throw new Error("User ID is required");
+
+    // Generate random accountId with ACC_ prefix
+    const randomSuffix = Math.random().toString(36).slice(2, 10).toUpperCase();
+    const accountId = `ACC_${randomSuffix}`;
+
+    // Model requires non-null investor_password and broker_server
+    const payload = {
+      userId,
+      accountId,
+      investor_password: "", // stored empty due to NOT NULL constraint
+      broker_server: "", // stored empty due to NOT NULL constraint
+      tradesyncId: null,
+      token: null,
+      type: "FREE",
+      isActive: true,
+    };
+
+    const tradeAcc = await TradeAcc.create(payload);
+    if (!tradeAcc) throw new Error("Trade account not created");
+
+    return {
+      message: "Free trade account created successfully",
+      data: tradeAcc,
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error in createFreeTradeAcc service:", error);
+    throw new Error(`Failed to create free trade account: ${error}`);
   }
 }
 
@@ -255,6 +288,7 @@ export const tradeAccService = {
   bulkDeleteTradeAccs,
   getTradeAccs,
   createTradeAcc,
+  createFreeTradeAcc,
   getTradeAccById,
   updateTradeAcc,
   deleteTradeAcc,

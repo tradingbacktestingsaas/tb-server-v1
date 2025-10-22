@@ -17,6 +17,8 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import tradeRoutes from "./routes/tradeRoutes.js";
 import strategiesRoutes from "./routes/strategiesRoutes.js";
 import newsRoutes from "./routes/newsRoutes.js";
+import plansRoutes from "./routes/planRoutes.js";
+import subscriptionRoutes from "./routes/subscriptionRoute.js";
 
 const app = express();
 const globalPrefix = "/public/api/v1";
@@ -65,6 +67,8 @@ app.use(`${globalPrefix}/trade`, tradeRoutes);
 app.use(`${globalPrefix}/strategies`, strategiesRoutes);
 app.use(`${globalPrefix}/notification`, notificationRoutes);
 app.use(`${globalPrefix}/news`, newsRoutes);
+app.use(`${globalPrefix}/plans`, plansRoutes);
+app.use(`${globalPrefix}/subscription`, subscriptionRoutes);
 
 app.use((req, res, next) => {
   next(new ApiError(httpStatus.NOT_FOUND, "Not found"));

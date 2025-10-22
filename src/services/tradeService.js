@@ -1,4 +1,5 @@
 import Trade from "../models/trade.model.js";
+import Order from "../models/order.model.js";
 import { Op, Sequelize, where } from "sequelize";
 
 export async function createTrade(tradeDetails) {
