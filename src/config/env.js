@@ -125,7 +125,7 @@ const config = {
   imageKit: {
     publicKey: envVars.IMAGEKIT_PUBLIC_KEY,
     privateKey: envVars.IMAGEKIT_PRIVATE_KEY,
-    urlEndpoint: envVars.IMAGEKIT_URL_ENDPOINT,
+    urlEndpoint: envVars.IMAGEKIT_ENDPOINT_URL,
   },
 
   email: {

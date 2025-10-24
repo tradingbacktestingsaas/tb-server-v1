@@ -8,6 +8,7 @@ export async function createTradeAcc(accDetails) {
     if (!accDetails) {
       throw new Error("Trade account details not found");
     }
+
     accDetails.investor_password = encrypt(accDetails.investor_password);
 
     const tradeAcc = await TradeAcc.create(accDetails);
@@ -23,6 +24,79 @@ export async function createTradeAcc(accDetails) {
     console.error("Error in createTradeAcc service:", error);
     throw new Error(`Failed to create trade account: ${error}`);
   }
+}
+
+export async function switchTradeAcc({ userId, tradeAccId }) {
+  let payload = {};
+  try {
+    const user = await User.findByPk(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const tradeAcc = await TradeAcc.findOne({
+      where: {
+        id: tradeAccId,
+        userId,
+      },
+    });
+
+    if (!tradeAcc) {
+      throw new Error("Trade-account not found");
+    }
+
+    if (tradeAcc.type === "FREE") {
+      payload.activeTradeAccountId = tradeAcc.id;
+      user.activeTradeAccountId = tradeAcc.id;
+      await user.save();
+      return {
+        message: "successfully switched to free account.",
+        data: payload,
+        success: true,
+      };
+    }
+
+    if (tradeAcc.type === "SYNC") {
+      if (user.plan === "FREE") {
+        return {
+          messge: "You are not allow to switch on current plan",
+          success: false,
+          data: null,
+        };
+      }
+      payload.activeTradeAccountId = tradeAcc.id;
+      payload.tradesyncId = tradeAcc.tradesyncId;
+      user.activeTradeAccountId = tradeAcc.id;
+      await user.save();
+      return {
+        message: "successfully switched to sync account.",
+        data: payload,
+        success: true,
+      };
+    }
+  } catch (error) {
+    console.error("Error in switchTradeAcc service:", error);
+    throw new Error(`Failed to switch trade account: ${error}`);
+  }
+}
+
+export async function activeTradeAcc(userId) {
+  const user = await User.findByPk(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+  const tradeAcc = await TradeAcc.findByPk(user.activeTradeAccountId);
+  tradeAcc.investor_password = decrypt(tradeAcc.investor_password);
+
+  if (!tradeAcc) {
+    throw new Error("Trade account not found");
+  }
+
+  return {
+    message: "Trade account switched successfully",
+    data: tradeAcc,
+    success: true,
+  };
 }
 
 export async function createFreeTradeAcc(userId) {
@@ -59,64 +133,24 @@ export async function createFreeTradeAcc(userId) {
   }
 }
 
-export async function switchTradeAcc({ userId, tradeAccId }) {
-  try {
-    const user = await User.findByPk(userId);
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    const tradeAcc = await TradeAcc.findOne({
-      where: { id: tradeAccId, isActive: true, userId: userId },
-    });
-
-    if (!tradeAcc) {
-      throw new Error("Trade account not found");
-    }
-
-    user.activeTradeAccountId = tradeAcc.id;
-    await user.save();
-    return {
-      message: "Trade account switched successfully",
-      data: { activeAccount: tradeAcc.id },
-      success: true,
-    };
-  } catch (error) {
-    console.error("Error in switchTradeAcc service:", error);
-    throw new Error(`Failed to switch trade account: ${error}`);
-  }
-}
-
-export async function activeTradeAcc(userId) {
-  const user = await User.findByPk(userId);
-  if (!user) {
-    throw new Error("User not found");
-  }
-  const tradeAcc = await TradeAcc.findByPk(user.activeTradeAccountId);
-  tradeAcc.investor_password = decrypt(tradeAcc.investor_password);
-
-  if (!tradeAcc) {
-    throw new Error("Trade account not found");
-  }
-
-  return {
-    message: "Trade account switched successfully",
-    data: tradeAcc,
-    success: true,
-  };
-}
-
 export async function getTradeAccs(options = {}) {
   try {
     const {
       accountId,
       broker_server,
+      userId,
       active,
       limit = 10,
       offset = 0,
     } = options;
 
     const where = {};
+
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      throw new Error("User not found");
+    }
 
     if (accountId) {
       where.accountId = { [Op.iLike]: `%${accountId}%` };
@@ -130,8 +164,16 @@ export async function getTradeAccs(options = {}) {
       where.active = active;
     }
 
+    if (userId) {
+      where.userId = user.id;
+    }
+
+    if (user.plan === "FREE") {
+      where.type = "FREE";
+    }
+
     const { count, rows } = await TradeAcc.findAndCountAll({
-      attributes: ["id", "accountId", "broker_server", "type", "tradeSyncId"],
+      attributes: ["id", "accountId", "broker_server", "type", "tradesyncId"],
       where,
       limit,
       offset,
@@ -152,34 +194,99 @@ export async function getTradeAccs(options = {}) {
   }
 }
 
-export async function getTradeAccById(accId) {
+export async function getTradeAccById(accountId, userId) {
   try {
-    const tradeAcc = await TradeAcc.findByPk(accId, {
-      order: [["createdAt", "DESC"]],
+    const user = await User.findByPk(userId);
+    if (!user) throw new Error("User not found");
+
+    const acc = await TradeAcc.findOne({
+      where: { id: accountId, userId }, // prevents cross-tenant access
       attributes: [
         "id",
+        "userId",
         "broker_server",
         "accountId",
         "type",
         "investor_password",
         "tradesyncId",
+        "createdAt",
       ],
     });
 
-    if (!tradeAcc) {
-      throw new Error("Trade account not found");
+    if (!acc) throw new Error("Trade account not found");
+
+    // Helper to serialize and decrypt before returning
+    const serialize = (instance) => {
+      const json = instance.toJSON ? instance.toJSON() : instance;
+      if (json.investor_password) {
+        json.investor_password = decrypt(json.investor_password);
+      }
+      return json;
+    };
+
+    // 1) FREE accounts:
+    // - If the user is on FREE plan, return the requested FREE account.
+    // - Otherwise, return the requested FREE account (if any).
+    if (acc.type === "FREE") {
+      return {
+        message: "Successfully fetched free account.",
+        data: serialize(acc),
+        success: true,
+      };
     }
 
-    tradeAcc.investor_password = decrypt(tradeAcc.investor_password);
+    // 2) SYNC accounts:
+    // - If the user is on FREE plan, fall back to their FREE account (if any).
+    // - Otherwise, return the requested SYNC account.
+    if (acc.type === "SYNC") {
+      if (user.plan === "FREE") {
+        const freeAcc = await TradeAcc.findOne({
+          where: { userId: user.id, type: "FREE" },
+          attributes: [
+            "id",
+            "userId",
+            "broker_server",
+            "accountId",
+            "type",
+            "investor_password",
+            "tradesyncId",
+            "createdAt",
+          ],
+          order: [["createdAt", "DESC"]],
+        });
+
+        if (!freeAcc) {
+          // Decide your product behavior: error vs. empty response.
+          // Here we error explicitly to make the state clear.
+          throw new Error("No free trade account available for this user.");
+        }
+
+        return {
+          message:
+            "Successfully fetched free account (SYNC not available on FREE plan).",
+          data: serialize(freeAcc),
+          success: true,
+        };
+      } else {
+        return {
+          message: "Trade account fetched successfully.",
+          data: serialize(acc),
+          success: true,
+        };
+      }
+    }
 
     return {
-      message: "Trade account fetched successfully",
-      data: tradeAcc,
+      message: "Trade account fetched successfully.",
+      data: serialize(acc),
       success: true,
     };
-  } catch (error) {
-    console.error("Error in getTradeAccById service:", error);
-    throw new Error(`Failed to fetch trade account: ${error}`);
+  } catch (err) {
+    console.error("Error in getTradeAccById service:", err);
+    // Avoid leaking internals in the thrown error; keep logs detailed, user-facing message generic
+    throw new Error(
+      `Failed to fetch trade account: ${err?.message ?? String(err)}`
+    );
   }
 }
 
@@ -288,8 +395,8 @@ export const tradeAccService = {
   bulkDeleteTradeAccs,
   getTradeAccs,
   createTradeAcc,
-  createFreeTradeAcc,
   getTradeAccById,
+  createFreeTradeAcc,
   updateTradeAcc,
   deleteTradeAcc,
   activeTradeAcc,

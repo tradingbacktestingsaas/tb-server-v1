@@ -241,6 +241,24 @@ export async function bulkDeleteNotifications(notificationIds = [], userId) {
   }
 }
 
+export async function deleteAllNotifications(userId) {
+  const deletedCount = await UserNotification.destroy({
+    where: { userId },
+  });
+  if (!deletedCount)
+    return {
+      message: "Failed to delete all",
+      success: false,
+      code: 400,
+    };
+
+  return {
+    message: "Successfully deleted notifications",
+    success: true,
+    code: 200,
+  };
+}
+
 const deleteNotificationById = async (notificationId) => {
   try {
     const notification = await UserNotification.findByPk(notificationId);
@@ -314,6 +332,7 @@ export const notificationService = {
   bulkDeleteNotifications,
   createNotification,
   getUserNotificationsById,
+  deleteAllNotifications,
   getNotificationsById,
   deleteNotificationById,
   markAsReadNotification,

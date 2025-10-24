@@ -1,6 +1,9 @@
 import User from "../models/user.model.js";
 import { Op, Sequelize } from "sequelize";
 import { encrypt } from "../utils/cryptoUtil.js";
+import { deleteImage, uploadImage } from "../lib/image-kit/index.js";
+import { generateToken } from "../utils/jwt.js";
+import { hashPassword } from "../utils/hash.js";
 
 export async function getUsers(options = {}) {
   try {
@@ -59,6 +62,53 @@ export async function getUsers(options = {}) {
   } catch (error) {
     console.error("Error in getUsers service:", error);
     throw new Error(`Failed to fetch users: ${error.message || error}`);
+  }
+}
+
+export async function uploadAvatar(userId, req) {
+  const { buffer, originalname } = req.file;
+  try {
+    const user = await User.findByPk(userId, {
+      attributes: [
+        "id",
+        "firstName",
+        "lastName",
+        "email",
+        "blocked",
+        "avatar_url",
+        "createdAt",
+        "updatedAt",
+        "role",
+        "plan",
+      ],
+    });
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    if (user?.avatar_key) {
+      deleteImage(avatar_key);
+    }
+
+    const avatarUrl = await uploadImage(buffer, originalname, "avatar");
+    if (!avatarUrl?.url) {
+      return {
+        message: "Avatar upload failed",
+        data: null,
+        success: false,
+      };
+    }
+    user.avatar_url = avatarUrl?.url;
+    user.avatar_key = avatarUrl?.fileId;
+    await user.save();
+    return {
+      message: "Avatar uploaded successfully",
+      data: user,
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error in uploadAvatar service:", error);
+    throw new Error(`Failed to upload avatar: ${error}`);
   }
 }
 
@@ -171,10 +221,35 @@ const updateUser = async (userId, userDetail) => {
       throw new Error("User not updated");
     }
 
+    const token = generateToken(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        plan: user.plan,
+        blocked: user.blocked,
+        type: "user",
+      },
+      "1h"
+    );
+
+    const payload = {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      role: user.role,
+      plan: user.plan,
+      blocked: user.blocked,
+      avatar_url: user.avatar_url,
+      activeTradeAccountId: user.activeTradeAccountId,
+    };
+
     return {
       message: "User updated successfully",
-      data: user,
+      data: payload,
       success: true,
+      token,
     };
   } catch (error) {
     console.error("Error in updateUser service:", error);
@@ -185,14 +260,15 @@ const updateUser = async (userId, userDetail) => {
 async function changePassword(userId, newPassword) {
   try {
     const user = await User.findByPk(userId);
+
     if (!user) {
       throw new Error("User not found");
     }
-    user.password = encrypt(newPassword);
+    const passwordHash = await hashPassword(newPassword);
+    user.password = passwordHash;
     await user.save();
     return {
       message: "Password changed successfully",
-      data: user,
       success: true,
     };
   } catch (error) {
@@ -212,6 +288,7 @@ export const usersService = {
   getUsers,
   getUserById,
   updateUser,
+  uploadAvatar,
   deleteUser,
   changePassword,
   getAllUserIds,

@@ -15,7 +15,7 @@ const getTradeAcc = async (req, res) => {
 };
 const getTradeAccById = async (req, res) => {
   try {
-    const tradeAcc = await tradeAccService.getTradeAccById(req.params.id);
+    const tradeAcc = await tradeAccService.getTradeAccById(req.params.id, req.body.userId);
     return res.status(201).json(tradeAcc);
   } catch (error) {
     return res.status(400).json({
