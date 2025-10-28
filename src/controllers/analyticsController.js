@@ -1,9 +1,10 @@
-import Trade from "../models/trade.model";
+import { analyticsService } from "../services/analyticsService.js";
 
-const tradeAnalytics = async (req, res) => {
+const dashboardAnalytics = async (req, res) => {
   try {
-    const user = await usersService.uploadAvatar(req.params.id, req);
-    return res.status(201).json(user);
+    const stats = await analyticsService.getStats(req.params.id);
+
+    return res.status(201).json({ analytics: stats.data });
   } catch (error) {
     return res.status(400).json({
       code: 400,
@@ -12,4 +13,24 @@ const tradeAnalytics = async (req, res) => {
       data: null,
     });
   }
+};
+
+const leaderBoard = async (req, res) => {
+  try {
+    const stats = await analyticsService.podium();
+
+    return res.status(201).json({ analytics: stats.data });
+  } catch (error) {
+    return res.status(400).json({
+      code: 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+
+export const analyticsController = {
+  dashboardAnalytics,
+  leaderBoard,
 };

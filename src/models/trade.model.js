@@ -1,19 +1,13 @@
 import { DataTypes } from "sequelize";
-import { sequelize } from '../config/db.js';
+import { sequelize } from "../config/db.js";
 
 const Trade = sequelize.define(
   "trades",
   {
     id: {
-      type: DataTypes.INTEGER,
-      autoIncrement: true,
-      primaryKey: true,
-    },
-    uuid: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
-      allowNull: false,
-      unique: true,
+      primaryKey: true,
     },
     ticket: {
       type: DataTypes.BIGINT, // int8(64,0)
@@ -69,6 +63,11 @@ const Trade = sequelize.define(
     closeDate: {
       type: DataTypes.DATE,
       allowNull: true,
+    },
+    note: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: "",
     },
   },
   {

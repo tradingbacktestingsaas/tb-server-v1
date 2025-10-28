@@ -59,6 +59,37 @@ const login = async (req, res) => {
   }
 };
 
+const logout = async (req, res) => {
+  try {
+    res.cookie("accessToken", null, {
+      httpOnly: true,
+      // In dev: DO NOT set domain. In prod: set your parent domain for subdomains.
+      domain: null,
+      path: "",
+      maxAge: 0,
+
+      // Cookie site policy:
+      // - If using same-origin dev (Next proxy to API): Lax is fine over HTTP
+      // - If cross-site (different ports) OR you want cross-subdomain in prod: use None + Secure
+      sameSite: null,
+      secure: true, // must be true when sameSite === 'none'
+    });
+    return res.status(200).json({
+      code: 200,
+      success: true,
+      message: "Signout successful",
+      data: null,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      code: 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+
 const googleLogin = async (req, res) => {
   try {
     const response = await authService.googleLogin(req.body);
@@ -230,4 +261,5 @@ export const authController = {
   adminLogin,
   verifyUserJWT,
   googleLogin,
+  logout,
 };

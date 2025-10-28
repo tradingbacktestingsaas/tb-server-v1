@@ -14,9 +14,9 @@ async function getNews() {
     const analysis = sentiment.analyze(item.title || "");
     const label =
       analysis.score > 1 ? "Buy" : analysis.score < -1 ? "Sell" : "Neutral";
-
-    return {
+      return {
       title: item.title,
+      summary: item.summary,
       sentiment: label,
       sentimentScore: analysis.score,
       link: item.link,

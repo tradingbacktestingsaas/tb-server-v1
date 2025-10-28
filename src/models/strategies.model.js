@@ -24,7 +24,6 @@ const Strategy = sequelize.define(
     type: {
       type: DataTypes.STRING, // example enum values "scalping", "swing", "day", "longterm"
       allowNull: false,
-      field: "strategies_type_enum",
     },
     isPremium: {
       type: DataTypes.BOOLEAN,

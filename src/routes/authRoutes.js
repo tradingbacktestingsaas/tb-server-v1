@@ -5,13 +5,14 @@ import { recaptchaV2 } from "../middlewares/recaptcha.js";
 const router = express.Router();
 
 // Authentication routes
-router.post("/register", recaptchaV2(), authController.register);
-router.post("/login", recaptchaV2(), authController.login);
-router.post("/google-login", recaptchaV2(), authController.googleLogin);
+router.post("/register",  authController.register);
+router.post("/login",  authController.login);
+router.post("/google-login",  authController.googleLogin);
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
 router.post("/admin-register", authController.adminRegister);
 router.post("/admin-login", authController.adminLogin);
+router.post("/logout", authController.logout);
 router.get(
   "/verification",
   auth(["user", "admin"]),

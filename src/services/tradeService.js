@@ -1,6 +1,9 @@
 import Trade from "../models/trade.model.js";
-import Order from "../models/order.model.js";
-import { Op, Sequelize, where } from "sequelize";
+import { Op } from "sequelize";
+import TradeAccount from "../models/trade_account.model.js";
+import User from "../models/user.model.js";
+import axios from "axios";
+import config from "../config/env.js";
 
 export async function createTrade(tradeDetails) {
   try {
@@ -23,10 +26,11 @@ export async function createTrade(tradeDetails) {
 export async function getTrades(query = {}) {
   try {
     const {
-      page = 1,
+      page = 0,
       limit = 10,
       sortBy = "createdAt",
       sortOrder = "DESC",
+
       // filters
       id,
       type,
@@ -44,23 +48,95 @@ export async function getTrades(query = {}) {
       closeDateTo,
     } = query;
 
+    // 🔹 Step 1: Try to get trade account + user
+    let tradeAcc = null;
+    let user = null;
+
+    if (accountId) {
+      tradeAcc = await TradeAccount.findByPk(accountId, {
+        include: [{ model: User, as: "user" }],
+      });
+      user = tradeAcc?.user;
+    }
+
+    const isMTType = ["MT4", "MT5"].includes(tradeAcc?.type);
+    const isPaidUser = true;
+
+    // 🟢 Step 2: If paid user + MT4/MT5 → use TradeSync API instead of local DB
+    if (isPaidUser && isMTType && tradeAcc?.tradesyncId) {
+      const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+      const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
+
+      const params = {
+        account_id: tradeAcc.tradesyncId,
+        page: pageNum,
+        limit: limitNum,
+      };
+
+      const tradesyncAuth = {
+        username: config.trade_sync.key,
+        password: config.trade_sync.secret,
+      };
+
+      try {
+        const response = await axios.get(
+          `https://api.tradesync.com/trades?account_id=${tradeAcc.tradesyncId}`,
+          {
+            auth: tradesyncAuth,
+            params,
+          }
+        );
+
+        const totalCount = await axios.get(
+          `https://api.tradesync.com/trades?account_id=${tradeAcc.tradesyncId}`,
+          {
+            auth: tradesyncAuth,
+          }
+        );
+
+        console.log(response);
+
+        const tradesData = response.data?.data || [];
+        const meta = totalCount.data?.meta || {};
+
+        return {
+          code: 200,
+          success: true,
+          message: "Trades fetched from TradeSync successfully",
+          source: "tradesync",
+          data: tradesData,
+          pagination: {
+            total: meta.count ?? tradesData.length,
+            page: pageNum,
+            limit: limitNum,
+            totalPages: meta.count
+              ? Math.ceil(meta.count / limitNum)
+              : tradesData.length < limitNum
+              ? 1
+              : pageNum + 1,
+          },
+        };
+      } catch (apiError) {
+        console.error(
+          "TradeSync API error:",
+          apiError.response?.data || apiError.message
+        );
+        throw new Error(
+          `Failed to fetch trades from TradeSync: ${
+            apiError.response?.data?.message || apiError.message
+          }`
+        );
+      }
+    }
+    // 🟡 Step 3: Local DB fallback (FREE plan or non-MT4/MT5)
     const whereClause = {};
 
-    if (id) {
-      whereClause.id = id;
-    }
-    if (type) {
-      whereClause.type = type;
-    }
-    if (status) {
-      whereClause.status = status;
-    }
-    if (accountId) {
-      whereClause.accountId = accountId;
-    }
-    if (symbol) {
-      whereClause.symbol = symbol;
-    }
+    if (id) whereClause.id = id;
+    if (type) whereClause.type = type;
+    if (status) whereClause.status = status;
+    if (accountId) whereClause.accountId = accountId;
+    if (symbol) whereClause.symbol = symbol;
+
     // lots exact or range
     if (lots !== undefined && lots !== null && lots !== "") {
       whereClause.lots = Number(lots);
@@ -70,7 +146,7 @@ export async function getTrades(query = {}) {
       if (maxLots) whereClause.lots[Op.lte] = Number(maxLots);
     }
 
-    // openDate filter: support exact day or range
+    // openDate filters
     if (openDateFrom || openDateTo) {
       whereClause.openDate = {};
       if (openDateFrom) whereClause.openDate[Op.gte] = new Date(openDateFrom);
@@ -82,10 +158,11 @@ export async function getTrades(query = {}) {
       whereClause.openDate = { [Op.between]: [start, end] };
     }
 
-    // closeDate filter: support exact day or range
+    // closeDate filters
     if (closeDateFrom || closeDateTo) {
       whereClause.closeDate = {};
-      if (closeDateFrom) whereClause.closeDate[Op.gte] = new Date(closeDateFrom);
+      if (closeDateFrom)
+        whereClause.closeDate[Op.gte] = new Date(closeDateFrom);
       if (closeDateTo) whereClause.closeDate[Op.lte] = new Date(closeDateTo);
     } else if (closeDate) {
       const start = new Date(closeDate);
@@ -97,8 +174,9 @@ export async function getTrades(query = {}) {
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
     const offset = (pageNum - 1) * limitNum;
-
-    const order = [[sortBy, String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC"]];
+    const order = [
+      [sortBy, String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC"],
+    ];
 
     const { rows, count } = await Trade.findAndCountAll({
       where: whereClause,
@@ -109,8 +187,9 @@ export async function getTrades(query = {}) {
 
     return {
       code: 200,
-      message: "Trades fetched successfully",
       success: true,
+      message: "Trades fetched from local DB successfully",
+      source: "local",
       data: rows,
       pagination: {
         total: count,
@@ -118,11 +197,10 @@ export async function getTrades(query = {}) {
         limit: limitNum,
         totalPages: Math.ceil(count / limitNum) || 1,
       },
-
     };
   } catch (error) {
     console.error("Error in getTrades service:", error);
-    throw new Error(`Failed to fetch trades: ${error}`);
+    throw new Error(`Failed to fetch trades: ${error.message}`);
   }
 }
 
@@ -199,10 +277,33 @@ export async function bulkDeleteTrade(body) {
   }
 }
 
+export async function bulkCreateTrade(body) {
+  try {
+    if (!body) {
+      return {
+        code: 400,
+        message: "Trades are required",
+        success: false,
+      };
+    }
+    const trades = await Trade.bulkCreate(body);
+    return {
+      code: 200,
+      message: "Trades bulk created successfully",
+      success: true,
+      data: trades,
+    };
+  } catch (error) {
+    console.error("Error in bulkCreateTrade service:", error);
+    throw new Error(`Failed to create trades: ${error}`);
+  }
+}
+
 export const tradeService = {
   createTrade,
   getTrades,
   updateTrade,
   deleteTrade,
   bulkDeleteTrade,
+  bulkCreateTrade,
 };

@@ -4,6 +4,7 @@ import Order from "../models/order.model.js";
 import Users from "../models/user.model.js";
 import stripeService from "./stripeService.js";
 import { Op, Sequelize, where } from "sequelize";
+import User from "../models/user.model.js";
 
 export async function createStrategies(strategiesDetails) {
   try {
@@ -30,30 +31,58 @@ export async function getStrategies(query = {}) {
       limit = 10,
       sortBy = "created_at",
       sortOrder = "DESC",
-      // filters
-      id,
-      status,
-      type,
-      isPremium,
-      userId,
+      filters = {},
       purchaser_user_id,
     } = query;
 
+    const { id, status, type, isPremium, userId, byUserId } = filters;
+
+    // 1️⃣ Fetch user plan if userId is provided
+    let userPlan = null;
+    if (userId) {
+      const user = await User.findByPk(userId);
+      userPlan = user?.plan || null;
+    }
+
+    // 2️⃣ Build where clause
     const whereClause = {};
+
     if (id) whereClause.id = id;
     if (status) whereClause.status = status;
-    if (type) whereClause.type = type;
-    if (typeof isPremium !== "undefined" && isPremium !== "") {
-      // accept "true"/"false" or boolean
-      whereClause.isPremium = String(isPremium).toLowerCase() === "true" || isPremium === true;
-    }
-    if (userId) whereClause.userId = userId;
 
+    if (typeof isPremium !== "undefined" && isPremium !== "") {
+      whereClause.isPremium = [true, "true"].includes(
+        isPremium === true ? true : String(isPremium).toLowerCase()
+      );
+    }
+
+    if (userPlan === "ELITE") {
+      // ELITE users can only see ELITE strategies
+      whereClause.type = type;
+    } else if (type) {
+      // Non-ELITE users: filter by type but ignore ELITE
+      if (type === "ELITE") {
+        whereClause.type = null; // returns no results if ELITE is requested
+      } else {
+        whereClause.type = type;
+      }
+    } else {
+      // Non-ELITE users: exclude ELITE strategies
+      whereClause.type = { [Op.ne]: "ELITE" };
+    }
+
+    if (byUserId) whereClause.userId = byUserId;
+
+    // 3️⃣ Pagination & sorting
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
     const offset = (pageNum - 1) * limitNum;
-    const order = [[sortBy, String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC"]];
 
+    const order = [
+      [sortBy, String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC"],
+    ];
+
+    // 4️⃣ Fetch strategies
     const { rows, count } = await Strategies.findAndCountAll({
       where: whereClause,
       offset,
@@ -61,7 +90,7 @@ export async function getStrategies(query = {}) {
       order,
     });
 
-    // Determine purchased strategies for the requesting user (if provided)
+    // 5️⃣ Fetch purchased strategy IDs if purchaser_user_id provided
     let purchasedStrategyIds = new Set();
     if (purchaser_user_id) {
       const userOrders = await Order.findAll({
@@ -73,12 +102,11 @@ export async function getStrategies(query = {}) {
         },
       });
       purchasedStrategyIds = new Set(
-        userOrders
-          .map((o) => o?.strategyId)
-          .filter((sid) => !!sid)
+        userOrders.map((o) => o.strategyId).filter(Boolean)
       );
     }
 
+    // 6️⃣ Mark purchased strategies
     const dataWithPurchase = rows.map((s) => {
       const json = s.toJSON();
       json.is_purchase = purchasedStrategyIds.has(json.id);
@@ -99,13 +127,12 @@ export async function getStrategies(query = {}) {
     };
   } catch (error) {
     console.error("Error in getStrategies service:", error);
-    throw new Error(`Failed to fetch strategies: ${error}`);
+    throw new Error(`Failed to fetch strategies: ${error.message || error}`);
   }
 }
 
 export async function updateStrategies(body) {
   try {
-
     if (!body.id) {
       return {
         code: 400,
@@ -179,26 +206,44 @@ export async function buyStrategy(body) {
     ]);
 
     if (!user) {
-      return { code: 404, message: "User not found", success: false, data: null };
+      return {
+        code: 404,
+        message: "User not found",
+        success: false,
+        data: null,
+      };
     }
     if (!strategy) {
-      return { code: 404, message: "Strategy not found", success: false, data: null };
+      return {
+        code: 404,
+        message: "Strategy not found",
+        success: false,
+        data: null,
+      };
     }
     if (!strategy.hasPrice || !strategy.price) {
-      return { code: 400, message: "Strategy is not purchasable", success: false, data: null };
+      return {
+        code: 400,
+        message: "Strategy is not purchasable",
+        success: false,
+        data: null,
+      };
     }
 
     // Compute amount in cents
     const amountCents = Math.round(Number(strategy.price) * 100);
-    const currency = String(strategy.currency || 'USD').toLowerCase();
+    const currency = String(strategy.currency || "USD").toLowerCase();
 
     // Ensure a Stripe customer exists and the payment method is associated
     const customer = await stripeService.getOrCreateCustomerByEmail(
       user.email,
-      [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined
+      [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined
     );
     try {
-      await stripeService.attachPaymentMethodToCustomer(paymentMethodId, customer.id);
+      await stripeService.attachPaymentMethodToCustomer(
+        paymentMethodId,
+        customer.id
+      );
     } catch (e) {
       // Ignore if it's already attached to this customer
     }
@@ -213,7 +258,7 @@ export async function buyStrategy(body) {
       customer_email: user.email,
     });
 
-    const isPaid = payment.status === 'succeeded';
+    const isPaid = payment.status === "succeeded";
 
     // Create Order entry; set requested fields to null per instruction
     const orderPayload = {
@@ -223,15 +268,15 @@ export async function buyStrategy(body) {
       amountSubtotalCents: amountCents,
       amountDiscountCents: 0,
       amountTotalCents: amountCents,
-      currency: String(strategy.currency || 'USD').toUpperCase(),
+      currency: String(strategy.currency || "USD").toUpperCase(),
       provider: null,
       providerCheckoutSessionId: null,
-      status: isPaid ? 'paid' : 'failed',
+      status: isPaid ? "paid" : "failed",
       couponId: null,
       invoiceId: null,
       hostedInvoiceUrl: null,
       provider_sub_id: null,
-      order_type: 'strategy',
+      order_type: "strategy",
       strategyId: strategy.id,
     };
 
@@ -239,7 +284,7 @@ export async function buyStrategy(body) {
 
     return {
       code: 200,
-      message: isPaid ? 'Strategy purchased successfully' : 'Payment failed',
+      message: isPaid ? "Strategy purchased successfully" : "Payment failed",
       success: isPaid,
       data: {
         order,
@@ -252,10 +297,38 @@ export async function buyStrategy(body) {
   }
 }
 
+const bulkCreateStrategy = async (details) => {
+  try {
+    if (!details) {
+      throw new Error("Trade account details not found");
+    }
+
+    const tradeAccs = await Strategies.bulkCreate(details, {
+      validate: true,
+      returning: true,
+      ignoreDuplicates: true,
+    });
+
+    if (!tradeAccs) {
+      throw new Error("Trade accounts not created");
+    }
+
+    return {
+      message: "Trade accounts created successfully",
+      data: tradeAccs,
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error in bulkCreateTradeAccs service:", error);
+    throw new Error(`Failed to create trade accounts: ${error}`);
+  }
+};
+
 export const strategiesService = {
   createStrategies,
   getStrategies,
   updateStrategies,
   deleteStrategies,
   buyStrategy,
+  bulkCreateStrategy,
 };

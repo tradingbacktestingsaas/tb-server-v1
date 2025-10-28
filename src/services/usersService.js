@@ -76,6 +76,7 @@ export async function uploadAvatar(userId, req) {
         "email",
         "blocked",
         "avatar_url",
+        "activeTradeAccountId",
         "createdAt",
         "updatedAt",
         "role",
@@ -145,7 +146,19 @@ export async function getUserById(userId) {
 
 export async function bulkCreateUsers(userDetail) {
   try {
-    const users = await User.bulkCreate(userDetail, {
+    // 1. Map over the users to create an array of promises for hashing each password.
+    const usersWithHashedPasswordsPromises = userDetail.map(async (user) => {
+      // 2. Await the hashing of the password for each user.
+      const hashedPassword = await hashPassword(user.password);
+      // 3. Return a new object with the hashed password.
+      return { ...user, password: hashedPassword };
+    });
+
+    // 4. Wait for all promises to resolve to get an array of user objects with hashed passwords.
+    const usersToCreate = await Promise.all(usersWithHashedPasswordsPromises);
+
+    // 5. Pass the correctly processed data to Sequelize's bulkCreate.
+    const users = await User.bulkCreate(usersToCreate, {
       validate: true,
       returning: true,
       ignoreDuplicates: true,
@@ -162,10 +175,10 @@ export async function bulkCreateUsers(userDetail) {
     };
   } catch (error) {
     console.error("Error in createBulkUsers service:", error);
-    throw new Error(`Failed to create users: ${error}`);
+    // Rethrow the error with a clearer message for debugging.
+    throw new Error(`Failed to create users: ${error.message}`);
   }
 }
-
 export async function bulkDeleteUsers(userId) {
   try {
     const users = await User.destroy({

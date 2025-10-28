@@ -22,7 +22,7 @@ router.post(
   usersController.uploadAvatar
 );
 router.patch("/change-password/:id", usersController.changePassword);
-router.post("/bulk-create", auth(["admin"]), usersController.bulkCreateUsers);
+router.post("/bulk-create", usersController.bulkCreateUsers);
 router.delete("/bulk-delete", auth(["admin"]), usersController.bulkDeleteUsers);
 
 export default router;

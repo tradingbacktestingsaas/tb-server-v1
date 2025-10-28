@@ -6,8 +6,9 @@ const router = express.Router();
 router.post("/create", strategiesController.createStrategies);
 router.get("/get", strategiesController.getStrategies);
 router.patch("/update", strategiesController.updateStrategies);
-router.delete("/delete", strategiesController.deleteStrategies);
+router.delete("/delete/:id", strategiesController.deleteStrategies);
 router.post("/buy-strategy", strategiesController.buyStrategy);
+router.post("/bulk", strategiesController.bulkCreate);
 
 
 export default router;
