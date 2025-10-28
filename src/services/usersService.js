@@ -1,6 +1,9 @@
 import User from "../models/user.model.js";
 import { Op, Sequelize } from "sequelize";
 import { encrypt } from "../utils/cryptoUtil.js";
+import { deleteImage, uploadImage } from "../lib/image-kit/index.js";
+import { generateToken } from "../utils/jwt.js";
+import { hashPassword } from "../utils/hash.js";
 
 export async function getUsers(options = {}) {
   try {
@@ -62,6 +65,54 @@ export async function getUsers(options = {}) {
   }
 }
 
+export async function uploadAvatar(userId, req) {
+  const { buffer, originalname } = req.file;
+  try {
+    const user = await User.findByPk(userId, {
+      attributes: [
+        "id",
+        "firstName",
+        "lastName",
+        "email",
+        "blocked",
+        "avatar_url",
+        "activeTradeAccountId",
+        "createdAt",
+        "updatedAt",
+        "role",
+        "plan",
+      ],
+    });
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    if (user?.avatar_key) {
+      deleteImage(avatar_key);
+    }
+
+    const avatarUrl = await uploadImage(buffer, originalname, "avatar");
+    if (!avatarUrl?.url) {
+      return {
+        message: "Avatar upload failed",
+        data: null,
+        success: false,
+      };
+    }
+    user.avatar_url = avatarUrl?.url;
+    user.avatar_key = avatarUrl?.fileId;
+    await user.save();
+    return {
+      message: "Avatar uploaded successfully",
+      data: user,
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error in uploadAvatar service:", error);
+    throw new Error(`Failed to upload avatar: ${error}`);
+  }
+}
+
 export async function getUserById(userId) {
   try {
     const user = await User.findByPk(userId, {
@@ -95,7 +146,19 @@ export async function getUserById(userId) {
 
 export async function bulkCreateUsers(userDetail) {
   try {
-    const users = await User.bulkCreate(userDetail, {
+    // 1. Map over the users to create an array of promises for hashing each password.
+    const usersWithHashedPasswordsPromises = userDetail.map(async (user) => {
+      // 2. Await the hashing of the password for each user.
+      const hashedPassword = await hashPassword(user.password);
+      // 3. Return a new object with the hashed password.
+      return { ...user, password: hashedPassword };
+    });
+
+    // 4. Wait for all promises to resolve to get an array of user objects with hashed passwords.
+    const usersToCreate = await Promise.all(usersWithHashedPasswordsPromises);
+
+    // 5. Pass the correctly processed data to Sequelize's bulkCreate.
+    const users = await User.bulkCreate(usersToCreate, {
       validate: true,
       returning: true,
       ignoreDuplicates: true,
@@ -112,10 +175,10 @@ export async function bulkCreateUsers(userDetail) {
     };
   } catch (error) {
     console.error("Error in createBulkUsers service:", error);
-    throw new Error(`Failed to create users: ${error}`);
+    // Rethrow the error with a clearer message for debugging.
+    throw new Error(`Failed to create users: ${error.message}`);
   }
 }
-
 export async function bulkDeleteUsers(userId) {
   try {
     const users = await User.destroy({
@@ -171,10 +234,35 @@ const updateUser = async (userId, userDetail) => {
       throw new Error("User not updated");
     }
 
+    const token = generateToken(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        plan: user.plan,
+        blocked: user.blocked,
+        type: "user",
+      },
+      "1h"
+    );
+
+    const payload = {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      role: user.role,
+      plan: user.plan,
+      blocked: user.blocked,
+      avatar_url: user.avatar_url,
+      activeTradeAccountId: user.activeTradeAccountId,
+    };
+
     return {
       message: "User updated successfully",
-      data: user,
+      data: payload,
       success: true,
+      token,
     };
   } catch (error) {
     console.error("Error in updateUser service:", error);
@@ -185,14 +273,15 @@ const updateUser = async (userId, userDetail) => {
 async function changePassword(userId, newPassword) {
   try {
     const user = await User.findByPk(userId);
+
     if (!user) {
       throw new Error("User not found");
     }
-    user.password = encrypt(newPassword);
+    const passwordHash = await hashPassword(newPassword);
+    user.password = passwordHash;
     await user.save();
     return {
       message: "Password changed successfully",
-      data: user,
       success: true,
     };
   } catch (error) {
@@ -212,6 +301,7 @@ export const usersService = {
   getUsers,
   getUserById,
   updateUser,
+  uploadAvatar,
   deleteUser,
   changePassword,
   getAllUserIds,

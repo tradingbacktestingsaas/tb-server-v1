@@ -8,6 +8,7 @@ router.get("/get/:id", tradeAccController.getTradeAccById);
 router.post("/create", tradeAccController.createTradeAcc);
 router.patch("/update/:id", tradeAccController.updateTradeAcc);
 router.delete("/delete/:id", tradeAccController.deleteTradeAcc);
+router.get("/brokers", tradeAccController.getBrokers);
 router.patch("/switch", tradeAccController.switchTradeAcc);
 router.get("/active", tradeAccController.activeTradeAcc);
 router.post("/bulk-create", tradeAccController.bulkCreateTradeAcc);

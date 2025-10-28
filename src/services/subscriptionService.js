@@ -29,10 +29,20 @@ export async function subscribe(subscriptionDetails) {
     ]);
 
     if (!user) {
-      return { code: 404, success: false, message: "User not found", data: null };
+      return {
+        code: 404,
+        success: false,
+        message: "User not found",
+        data: null,
+      };
     }
     if (!plan) {
-      return { code: 404, success: false, message: "Plan not found", data: null };
+      return {
+        code: 404,
+        success: false,
+        message: "Plan not found",
+        data: null,
+      };
     }
 
     // Check for existing active subscription for this user and cancel it before creating a new one
@@ -45,7 +55,10 @@ export async function subscribe(subscriptionDetails) {
 
     if (existingActive && existingActive.provider_sub_id) {
       try {
-        console.log("Canceling existing active subscription:", existingActive.provider_sub_id);
+        console.log(
+          "Canceling existing active subscription:",
+          existingActive.provider_sub_id
+        );
         await stripeService.cancelSubscription({
           subscriptionId: existingActive.provider_sub_id,
           cancelAtPeriodEnd: false,
@@ -68,7 +81,10 @@ export async function subscribe(subscriptionDetails) {
     );
 
     // Attach payment method and set default
-    await stripeService.attachPaymentMethodToCustomer(paymentMethodId, customer.id);
+    await stripeService.attachPaymentMethodToCustomer(
+      paymentMethodId,
+      customer.id
+    );
 
     // Create recurring price on the fly (monthly) and then create subscription
     const price = await stripeService.createRecurringPrice({
@@ -89,7 +105,10 @@ export async function subscribe(subscriptionDetails) {
     const hostedInvoiceUrl = latestInvoice?.hosted_invoice_url || null;
     const invoiceId = latestInvoice?.id || null;
     const paymentIntent = latestInvoice?.payment_intent || null;
-    const paymentId = typeof paymentIntent === "object" ? paymentIntent.id : paymentIntent || null;
+    const paymentId =
+      typeof paymentIntent === "object"
+        ? paymentIntent.id
+        : paymentIntent || null;
 
     // Create Order
     const orderPayload = {
@@ -102,7 +121,10 @@ export async function subscribe(subscriptionDetails) {
       currency: "USD",
       provider: "stripe",
       providerCheckoutSessionId: paymentId || null,
-      status: latestInvoice?.status === "paid" || stripeSub.status === "active" ? "paid" : "pending",
+      status:
+        latestInvoice?.status === "paid" || stripeSub.status === "active"
+          ? "paid"
+          : "pending",
       couponId: null,
       invoiceId: invoiceId,
       hostedInvoiceUrl: hostedInvoiceUrl,
@@ -113,8 +135,12 @@ export async function subscribe(subscriptionDetails) {
     const order = await Order.create(orderPayload);
 
     // Create UserSubscription
-    const periodEnd = stripeSub.current_period_end ? new Date(stripeSub.current_period_end * 1000) : null;
-    const periodStart = stripeSub.current_period_start ? new Date(stripeSub.current_period_start * 1000) : new Date();
+    const periodEnd = stripeSub.current_period_end
+      ? new Date(stripeSub.current_period_end * 1000)
+      : null;
+    const periodStart = stripeSub.current_period_start
+      ? new Date(stripeSub.current_period_start * 1000)
+      : new Date();
 
     const userSubscriptionPayload = {
       userId: user.id,
@@ -129,7 +155,9 @@ export async function subscribe(subscriptionDetails) {
     };
 
     // Upsert user subscription: update existing for this user, or create new if none exists
-    let userSubscription = await UserSubscription.findOne({ where: { userId: user.id } });
+    let userSubscription = await UserSubscription.findOne({
+      where: { userId: user.id },
+    });
     if (userSubscription) {
       await userSubscription.update(userSubscriptionPayload);
     } else {
@@ -152,6 +180,7 @@ export async function subscribe(subscriptionDetails) {
           hostedInvoiceUrl,
           paymentId,
         },
+        user: user,
       },
     };
   } catch (error) {
@@ -162,8 +191,10 @@ export async function subscribe(subscriptionDetails) {
 
 export async function createFreeSubscription(freeSubscriptionDetails) {
   try {
-    const userId = freeSubscriptionDetails.user_id || freeSubscriptionDetails.userId;
-    const planId = freeSubscriptionDetails.plan_id || freeSubscriptionDetails.planId;
+    const userId =
+      freeSubscriptionDetails.user_id || freeSubscriptionDetails.userId;
+    const planId =
+      freeSubscriptionDetails.plan_id || freeSubscriptionDetails.planId;
 
     if (!userId || !planId) {
       return {
@@ -180,10 +211,20 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
     ]);
 
     if (!user) {
-      return { code: 404, success: false, message: "User not found", data: null };
+      return {
+        code: 404,
+        success: false,
+        message: "User not found",
+        data: null,
+      };
     }
     if (!plan) {
-      return { code: 404, success: false, message: "Plan not found", data: null };
+      return {
+        code: 404,
+        success: false,
+        message: "Plan not found",
+        data: null,
+      };
     }
 
     // Prepare free subscription payload
@@ -201,7 +242,9 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
     };
 
     // Upsert by user: update existing record for this user, else create new
-    let userSubscription = await UserSubscription.findOne({ where: { userId: user.id } });
+    let userSubscription = await UserSubscription.findOne({
+      where: { userId: user.id },
+    });
     if (userSubscription) {
       await userSubscription.update(freeSubPayload);
     } else {
@@ -216,6 +259,8 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
     try {
       const result = await createFreeTradeAcc(user.id);
       tradeAcc = result?.data || null;
+      user.activeTradeAccountId = tradeAcc?.id || null;
+      await user.save();
     } catch (e) {
       console.error("Failed to create free trade account:", e?.message || e);
     }
@@ -227,6 +272,7 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
       data: {
         subscription: userSubscription,
         tradeAccount: tradeAcc,
+        user: user,
       },
     };
   } catch (error) {

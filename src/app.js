@@ -8,7 +8,9 @@ import { errorConverter, errorHandler } from "./middlewares/error.js";
 import ApiError from "./utils/ApiError.js";
 import config from "./config/env.js";
 import dbConnection from "./config/db.js";
+
 import "./associations/userAssociation/index.js";
+import "./associations/tradeAssociation/index.js"
 
 import authRoutes from "./routes/authRoutes.js";
 import usersRoutes from "./routes/usersRoutes.js";
@@ -19,6 +21,7 @@ import strategiesRoutes from "./routes/strategiesRoutes.js";
 import newsRoutes from "./routes/newsRoutes.js";
 import plansRoutes from "./routes/planRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoute.js";
+import analyticsRoutes from "./routes/analyticsRoutes.js";
 
 const app = express();
 const globalPrefix = "/public/api/v1";
@@ -40,7 +43,12 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-recaptcha-token", "x-recaptcha-token"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-recaptcha-token",
+    "x-recaptcha-token",
+  ],
 };
 
 app.use(cors(corsOptions));
@@ -69,6 +77,7 @@ app.use(`${globalPrefix}/notification`, notificationRoutes);
 app.use(`${globalPrefix}/news`, newsRoutes);
 app.use(`${globalPrefix}/plans`, plansRoutes);
 app.use(`${globalPrefix}/subscription`, subscriptionRoutes);
+app.use(`${globalPrefix}/analytics`, analyticsRoutes);
 
 app.use((req, res, next) => {
   next(new ApiError(httpStatus.NOT_FOUND, "Not found"));

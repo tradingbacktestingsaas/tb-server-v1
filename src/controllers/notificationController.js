@@ -63,6 +63,22 @@ const bulkDeleteNotifications = async (req, res) => {
   }
 };
 
+const deleteAllNotifications = async (req, res) => {
+  try {
+    const notification = await notificationService.deleteAllNotifications(
+      req.body.userId
+    );
+    return res.status(201).json(notification);
+  } catch (error) {
+    return res.status(400).json({
+      code: 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+
 const deleteNotificationById = async (req, res) => {
   try {
     const notification = await notificationService.deleteNotificationById(
@@ -119,4 +135,5 @@ export const notifcationController = {
   bulkDeleteNotifications,
   markAsReadNotification,
   markAllAsReadNotification,
+  deleteAllNotifications,
 };

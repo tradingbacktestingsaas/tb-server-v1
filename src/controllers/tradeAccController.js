@@ -15,8 +15,21 @@ const getTradeAcc = async (req, res) => {
 };
 const getTradeAccById = async (req, res) => {
   try {
-    const tradeAcc = await tradeAccService.getTradeAccById(req.params.id);
+    const tradeAcc = await tradeAccService.getTradeAccById(req.params.id, req.body.userId);
     return res.status(201).json(tradeAcc);
+  } catch (error) {
+    return res.status(400).json({
+      code: 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+const getBrokers = async (req, res) => {
+  try {
+    const brokers = await tradeAccService.getBrokers(req.body.query);
+    return res.status(201).json(brokers);
   } catch (error) {
     return res.status(400).json({
       code: 400,
@@ -131,4 +144,5 @@ export const tradeAccController = {
   bulkCreateTradeAcc,
   switchTradeAcc,
   activeTradeAcc,
+  getBrokers
 };
