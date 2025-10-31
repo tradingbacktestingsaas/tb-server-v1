@@ -1,5 +1,5 @@
 import { DataTypes } from "sequelize";
-import { sequelize } from '../config/db.js';
+import { sequelize } from "../config/db.js";
 
 const Order = sequelize.define(
   "orders",
@@ -79,10 +79,10 @@ const Order = sequelize.define(
       allowNull: true,
       field: "provider_sub_id",
     },
-    orderType: {
+    cycle: {
       type: DataTypes.STRING(32),
       allowNull: true,
-      field: "order_type",
+      field: "cycle",
     },
     strategyId: {
       type: DataTypes.UUID,

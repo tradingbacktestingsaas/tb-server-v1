@@ -15,6 +15,21 @@ const dashboardAnalytics = async (req, res) => {
   }
 };
 
+const fullAnalytics = async (req, res) => {
+  try {
+    const stats = await analyticsService.getFullAnalyses(req);
+
+    return res.status(201).json({ analytics: stats.data });
+  } catch (error) {
+    return res.status(400).json({
+      code: 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+
 const leaderBoard = async (req, res) => {
   try {
     const stats = await analyticsService.podium();
@@ -33,4 +48,5 @@ const leaderBoard = async (req, res) => {
 export const analyticsController = {
   dashboardAnalytics,
   leaderBoard,
+  fullAnalytics,
 };

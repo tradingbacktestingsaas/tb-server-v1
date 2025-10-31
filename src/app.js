@@ -10,7 +10,8 @@ import config from "./config/env.js";
 import dbConnection from "./config/db.js";
 
 import "./associations/userAssociation/index.js";
-import "./associations/tradeAssociation/index.js"
+import "./associations/tradeAssociation/index.js";
+import "./associations/ordersAssociation/index.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import usersRoutes from "./routes/usersRoutes.js";
@@ -22,6 +23,7 @@ import newsRoutes from "./routes/newsRoutes.js";
 import plansRoutes from "./routes/planRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoute.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
+import ordersRoutes from "./routes/ordersRoutes.js";
 
 const app = express();
 const globalPrefix = "/public/api/v1";
@@ -78,6 +80,7 @@ app.use(`${globalPrefix}/news`, newsRoutes);
 app.use(`${globalPrefix}/plans`, plansRoutes);
 app.use(`${globalPrefix}/subscription`, subscriptionRoutes);
 app.use(`${globalPrefix}/analytics`, analyticsRoutes);
+app.use(`${globalPrefix}/orders`, ordersRoutes);
 
 app.use((req, res, next) => {
   next(new ApiError(httpStatus.NOT_FOUND, "Not found"));

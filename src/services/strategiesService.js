@@ -67,6 +67,10 @@ export async function getStrategies(query = {}) {
         whereClause.type = type;
       }
     } else {
+      if (type === "PERSONAL") {
+        whereClause.type = "PERSONAL";
+        whereClause.userId = userId;
+      }
       // Non-ELITE users: exclude ELITE strategies
       whereClause.type = { [Op.ne]: "ELITE" };
     }
