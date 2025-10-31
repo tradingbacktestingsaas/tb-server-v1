@@ -10,6 +10,7 @@ User.hasMany(TradeAccount, {
   as: "tradeAccounts", // alias for eager loading
   onDelete: "CASCADE", // delete TradeAccounts if user deleted
 });
+
 TradeAccount.belongsTo(User, {
   foreignKey: "userId",
   as: "user",
@@ -47,3 +48,4 @@ UserNotification.belongsTo(Notification, {
   foreignKey: "notificationId",
   as: "notificationInfo",
 });
+

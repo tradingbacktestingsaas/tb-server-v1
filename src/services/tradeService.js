@@ -67,53 +67,44 @@ export async function getTrades(query = {}) {
       const pageNum = Math.max(parseInt(page, 10) || 1, 1);
       const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
 
-      const params = {
-        account_id: tradeAcc.tradesyncId,
-        page: pageNum,
-        limit: limitNum,
-      };
-
       const tradesyncAuth = {
         username: config.trade_sync.key,
         password: config.trade_sync.secret,
       };
 
       try {
-        const response = await axios.get(
+        // 🧩 Step 1: Fetch ALL trades (since API pagination is buggy)
+        const allTradesResp = await axios.get(
           `https://api.tradesync.com/trades?account_id=${tradeAcc.tradesyncId}`,
-          {
-            auth: tradesyncAuth,
-            params,
-          }
+          { auth: tradesyncAuth }
         );
 
-        const totalCount = await axios.get(
-          `https://api.tradesync.com/trades?account_id=${tradeAcc.tradesyncId}`,
-          {
-            auth: tradesyncAuth,
-          }
+        const allTrades = allTradesResp?.data?.data || [];
+        const total = allTrades.length;
+
+        // 🧩 Step 2: Manual pagination
+        const startIndex = (pageNum - 1) * limitNum;
+        const paginatedTrades = allTrades.slice(
+          startIndex,
+          startIndex + limitNum
         );
 
-        console.log(response);
+        // 🧩 Step 3: Compute total pages
+        const totalPages = Math.ceil(total / limitNum);
 
-        const tradesData = response.data?.data || [];
-        const meta = totalCount.data?.meta || {};
-
+        // 🧩 Step 4: Return same structure as before
         return {
           code: 200,
           success: true,
-          message: "Trades fetched from TradeSync successfully",
-          source: "tradesync",
-          data: tradesData,
+          message:
+            "Trades fetched from TradeSync successfully (manual pagination)",
+          sync: true,
+          data: paginatedTrades,
           pagination: {
-            total: meta.count ?? tradesData.length,
+            total,
             page: pageNum,
             limit: limitNum,
-            totalPages: meta.count
-              ? Math.ceil(meta.count / limitNum)
-              : tradesData.length < limitNum
-              ? 1
-              : pageNum + 1,
+            totalPages,
           },
         };
       } catch (apiError) {
@@ -191,6 +182,7 @@ export async function getTrades(query = {}) {
       message: "Trades fetched from local DB successfully",
       source: "local",
       data: rows,
+      sync: false,
       pagination: {
         total: count,
         page: pageNum,

@@ -163,104 +163,141 @@ export async function getStats(tradeAccountId) {
   }
 }
 
-export async function getFullAnalyses(
-  accountId,
-  {
-    monthlies = { limit: 100, page: 1, order: "desc" },
-    dailies = { limit: 100, page: 1, order: "desc" },
-  } = {}
-) {
-  if (!accountId) {
-    throw new Error("accountId is required");
-  }
+export async function getFullAnalyses(req) {
+  const q = req.query || req;
 
-  // 1️⃣ Find the account in DB with user info
+  const accountId = q.accountId || q.account_id;
+  if (!accountId) throw new Error("accountId is required");
+
+  // Helper: read page value
+  const readPage = (group, defaultPage) => {
+    const dotted = q[`${group}.page`];
+    if (dotted) return parseInt(dotted, 10) || defaultPage;
+    if (q[group] && typeof q[group] === "object" && q[group].page) {
+      return parseInt(q[group].page, 10) || defaultPage;
+    }
+    const flatKey =
+      group === "monthlies"
+        ? q.monthPage || q.month_page
+        : q.dailyPage || q.daily_page;
+    if (flatKey) return parseInt(flatKey, 10) || defaultPage;
+    return defaultPage;
+  };
+
+  // Helper: read limit value
+  const readLimit = (group, defaultLimit) => {
+    const dotted = q[`${group}.limit`];
+    if (dotted) return parseInt(dotted, 10) || defaultLimit;
+    if (q[group] && typeof q[group] === "object" && q[group].limit) {
+      return parseInt(q[group].limit, 10) || defaultLimit;
+    }
+    const flatKey =
+      group === "monthlies"
+        ? q.monthLimit || q.month_limit
+        : q.dailyLimit || q.daily_limit;
+    if (flatKey) return parseInt(flatKey, 10) || defaultLimit;
+    return defaultLimit;
+  };
+
+  // 🕒 Separate Range Handling
+  const monthRange = q.monthRange || "90d"; // e.g. "3m" or "90d"
+  const dailyRange = q.dailyRange || "30d";
+
+  const normalizeRangeToLimit = (range, defaults) => {
+    if (!range) return defaults;
+    switch (range) {
+      case "7d":
+        return 7;
+      case "30d":
+        return 30;
+      case "90d":
+        return 90;
+      case "3m":
+        return 3;
+      case "6m":
+        return 6;
+      default:
+        if (!isNaN(Number(range))) return Number(range);
+        return defaults;
+    }
+  };
+
+  // 📆 Compute pages & limits separately
+  const monthlies = {
+    page: readPage("monthlies", 1),
+    limit: normalizeRangeToLimit(monthRange, 12), // months
+  };
+
+  const dailies = {
+    page: readPage("dailies", 1),
+    limit: normalizeRangeToLimit(dailyRange, 30), // days
+  };
+
+  // 🔒 Account validation
   const tradeAcc = await TradeAccount.findByPk(accountId, {
     include: [{ model: User, as: "user" }],
   });
 
-  if (!tradeAcc) {
-    return {
-      success: false,
-      message: "Trade account not found",
-      data: null,
-    };
-  }
+  if (!tradeAcc)
+    return { success: false, message: "Trade account not found", data: null };
 
-  // 2️⃣ Check conditions — MT4/MT5 and not FREE plan
   const isEligible =
     (tradeAcc.type === "MT4" || tradeAcc.type === "MT5") &&
     tradeAcc.user?.plan !== "FREE";
-
-  if (!isEligible) {
+  if (!isEligible)
     return {
       success: false,
       message:
         "Analyses are only available for MT4/MT5 accounts with a paid plan.",
       data: null,
     };
-  }
 
-  // 3️⃣ Ensure tradesyncId exists
-  if (!tradeAcc.tradesyncId) {
+  if (!tradeAcc.tradesyncId)
     return {
       success: false,
       message: "TradeSync ID not linked to this account.",
       data: null,
     };
-  }
 
-  // 4️⃣ Prepare TradeSync auth
   const auth = {
-    username: process.env.TRADESYNC_API_KEY,
-    password: process.env.TRADESYNC_API_SECRET,
+    username: config.trade_sync.key,
+    password: config.trade_sync.secret,
   };
 
+  const baseURL =
+    process.env.TRADESYNC_API_URL || "https://api.tradesync.com/analyses";
+
   try {
-    const baseURL = "https://api.tradesync.com/analyses";
-
-    // 5️⃣ Fetch both endpoints concurrently with separate pagination
+    // 🧠 Fetch monthlies & dailies separately with their own limits
     const [monthliesRes, dailiesRes] = await Promise.all([
-      axios.get(`${baseURL}/${tradeAcc.tradesyncId}/monthlies`, {
-        auth,
-        params: {
-          limit: monthlies.limit,
-          page: monthlies.page,
-          order: monthlies.order,
-        },
-      }),
-      axios.get(`${baseURL}/${tradeAcc.tradesyncId}/dailies`, {
-        auth,
-        params: {
-          limit: dailies.limit,
-          page: dailies.page,
-          order: dailies.order,
-        },
-      }),
+      axios.get(
+        `${baseURL}/${tradeAcc.tradesyncId}/monthlies?page=${monthlies.page}&limit=${monthlies.limit}`,
+        { auth }
+      ),
+      axios.get(
+        `${baseURL}/${tradeAcc.tradesyncId}/dailies?page=${dailies.page}&limit=${dailies.limit}`,
+        { auth }
+      ),
     ]);
-
-    // 6️⃣ Extract results
-    const monthliesData = monthliesRes.data?.data ?? [];
-    const dailiesData = dailiesRes.data?.data ?? [];
 
     return {
       success: true,
       message: "TradeSync full analyses fetched successfully",
       data: {
         monthlies: {
-          data: monthliesData,
-          pagination: {
-            ...monthliesRes.data?.meta,
-            currentPage: monthlies.page,
-            limit: monthlies.limit,
+          data: monthliesRes.data?.data ?? [],
+          meta: {
+            ...(monthliesRes.data?.meta || {}),
+            ...monthlies,
+            range: monthRange,
           },
         },
         dailies: {
-          data: dailiesData,
-          pagination: {
-            ...dailiesRes.data?.meta,
-            currentPage: dailies.page,
-            limit: dailies.limit,
+          data: dailiesRes.data?.data ?? [],
+          meta: {
+            ...(dailiesRes.data?.meta || {}),
+            ...dailies,
+            range: dailyRange,
           },
         },
       },
@@ -270,7 +307,14 @@ export async function getFullAnalyses(
       "❌ Error fetching TradeSync analyses:",
       error.response?.data || error.message
     );
-    throw new Error(`Failed to fetch TradeSync analyses: ${error.message}`);
+    return {
+      success: false,
+      message:
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to fetch TradeSync analyses",
+      data: null,
+    };
   }
 }
 
@@ -388,4 +432,4 @@ export async function podium() {
   }
 }
 
-export const analyticsService = { getStats, podium };
+export const analyticsService = { getStats, podium, getFullAnalyses };

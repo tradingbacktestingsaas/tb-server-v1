@@ -255,11 +255,10 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
     await Users.update({ plan: plan.code }, { where: { id: user.id } });
 
     // Create a FREE Trade Account for the user with random ACC_ prefixed accountId
-    let tradeAcc = null;
+    const result = await createFreeTradeAcc(user.id);
     try {
-      const result = await createFreeTradeAcc(user.id);
-      tradeAcc = result?.data || null;
-      user.activeTradeAccountId = tradeAcc?.id || null;
+      const tradeAcc = result.tradeAccount || null;
+      user.activeTradeAccountId = tradeAcc.id ;
       await user.save();
     } catch (e) {
       console.error("Failed to create free trade account:", e?.message || e);
@@ -271,7 +270,7 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
       message: "Free subscription created successfully",
       data: {
         subscription: userSubscription,
-        tradeAccount: tradeAcc,
+        tradeAccount: result?.tradeAccount,
         user: user,
       },
     };

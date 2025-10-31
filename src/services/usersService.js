@@ -4,6 +4,7 @@ import { encrypt } from "../utils/cryptoUtil.js";
 import { deleteImage, uploadImage } from "../lib/image-kit/index.js";
 import { generateToken } from "../utils/jwt.js";
 import { hashPassword } from "../utils/hash.js";
+import TradeAccount from "../models/trade_account.model.js";
 
 export async function getUsers(options = {}) {
   try {
@@ -128,14 +129,20 @@ export async function getUserById(userId) {
         "updatedAt",
         "role",
         "plan",
+        "activeTradeAccountId",
       ],
     });
     if (!user) {
       throw new Error("User not found");
     }
+
+    const account = await TradeAccount.findOne({
+      where: { userId: user.id, id: user.activeTradeAccountId },
+    });
+
     return {
       message: "User fetched successfully",
-      data: user,
+      data: { user: user, account: account },
       success: true,
     };
   } catch (error) {
