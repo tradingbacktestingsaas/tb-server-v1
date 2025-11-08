@@ -24,6 +24,7 @@ import plansRoutes from "./routes/planRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoute.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import ordersRoutes from "./routes/ordersRoutes.js";
+import webhookRoute from "./routes/stripeWebhook.js";
 
 const app = express();
 const globalPrefix = "/public/api/v1";
@@ -52,6 +53,15 @@ const corsOptions = {
     "x-recaptcha-token",
   ],
 };
+app.use("/webhook", (req, res, next) => {
+  if (req.originalUrl.startsWith("/webhook")) {
+    next(); // skip global parsers
+  } else {
+    express.json()(req, res, next);
+  }
+});
+
+app.use(`/webhook`, webhookRoute);
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));

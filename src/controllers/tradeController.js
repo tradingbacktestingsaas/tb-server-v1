@@ -41,7 +41,7 @@ const updateTrade = async (req, res) => {
 
 const deleteTrade = async (req, res) => {
   try {
-    const trade = await tradeService.deleteTrade(req.body);
+    const trade = await tradeService.deleteTrade(req.params.id);
     return res.status(200).json(trade);
   } catch (error) {
     return res.status(error.code || 500).json({

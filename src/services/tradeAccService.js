@@ -6,6 +6,7 @@ import { sequelize } from "../config/db.js";
 import axios from "axios";
 import config from "../config/env.js";
 import { auth } from "google-auth-library";
+import TradeAccount from "../models/trade_account.model.js";
 
 const SYNC_LIMITS = {
   FREE: 0,
@@ -29,7 +30,7 @@ const isNumeric = (v) => /^[0-9]+$/.test(v);
 const toDTO = (local, remote) => ({
   id: local.id, // local UUID
   type: local.type, // FREE | MT4 | MT5
-  accountId: remote?.account_number ?? local.accountId ?? null,
+  account_no: remote?.account_number ?? local.account_no ?? null,
   broker_server: remote?.broker_server ?? local.broker_server ?? null,
   tradesyncId: local.tradesyncId ?? remote?.id ?? null,
   isActive: !!local.isActive,
@@ -86,7 +87,7 @@ export async function createTradeAcc(accDetails) {
           0,
           10
         )}`,
-        account_number: accDetails?.accountId ?? null,
+        account_number: accDetails?.account_no ?? null,
         password: accDetails?.investor_password ?? null,
         application: accDetails?.type?.toLowerCase() ?? null,
         broker_server_id: accDetails?.broker_server ?? null,
@@ -276,7 +277,9 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
 
     // Handle FREE local accounts
     if (type === "FREE") {
-      const tradeAcc = await TradeAcc.findByPk(tradeAccId);
+      const tradeAcc = await TradeAcc.findByPk(tradeAccId, {
+        where: { userId: user.id, isActive: false },
+      });
       if (!tradeAcc) {
         throw new Error("Trade account not found");
       }
@@ -286,8 +289,8 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
         throw new Error("Trade account does not belong to the user");
       }
 
-      user.activeTradeAccountId = tradeAccId;
-      await user.save();
+      tradeAcc.isActive = true;
+      await tradeAcc.save();
       return {
         message: "Trade account switched successfully",
         data: tradeAcc,
@@ -304,7 +307,9 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
       }
 
       // Ensure the account belongs to the user (safety check)
-      const tradeAcc = await TradeAcc.findByPk(tradeAccId);
+      const tradeAcc = await TradeAcc.findByPk(tradeAccId, {
+        where: { userId: user.id, isActive: false },
+      });
       if (!tradeAcc) {
         throw new Error("Trade account not found");
       }
@@ -352,8 +357,7 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
         throw new Error("Trade account not found");
       }
 
-      user.activeTradeAccountId = tradeAcc.id;
-      await user.save();
+      await tradeAcc.update({ type, isActive: true });
       return {
         message: "Trade account switched successfully",
         data: tradeAcc,
@@ -394,11 +398,21 @@ export async function createFreeTradeAcc(userId) {
     const user = await User.findByPk(userId);
     if (!user) throw new Error("User not found");
 
-    const existing = await TradeAcc.findOne({
+    const existing = await TradeAccount.findOne({
       where: { userId: userId, type: "FREE" },
     });
 
+    const activeMTAccounts = await TradeAccount.findAll({
+      where: { userId: userId, type: { [Op.in]: ["MT4", "MT5"] } },
+    });
+    
+    if (activeMTAccounts.length > 0) {
+      activeMTAccounts.forEach((acc) => (acc.isActive = false));
+    }
+
     if (existing) {
+      existing.isActive = true;
+      await existing.save();
       return {
         message: "Downgraded to free",
         tradeAccount: existing,
@@ -425,7 +439,7 @@ export async function createFreeTradeAcc(userId) {
     // Model requires non-null investor_password and broker_server
     const payload = {
       userId,
-      accountId,
+      account_no: accountId,
       investor_password: "", // stored empty due to NOT NULL constraint
       broker_server: "", // stored empty due to NOT NULL constraint
       tradesyncId: null,
@@ -434,10 +448,9 @@ export async function createFreeTradeAcc(userId) {
       isActive: true,
     };
 
-    const tradeAccount = await TradeAcc.create(payload);
+    const tradeAccount = await TradeAccount.create(payload);
     if (!tradeAccount) throw new Error("Trade account not created");
 
-    user.activeTradeAccountId = tradeAccount.id;
     return {
       message: "Free trade account created successfully",
       tradeAccount: tradeAccount,
@@ -464,7 +477,7 @@ export async function createFreeTradeAcc(userId) {
 export async function getTradeAccs(options = {}) {
   try {
     const {
-      accountId,
+      account_no,
       broker_server,
       userId,
       active,
@@ -480,8 +493,8 @@ export async function getTradeAccs(options = {}) {
       throw new Error("User not found");
     }
 
-    if (accountId) {
-      where.accountId = { [Op.iLike]: `%${accountId}%` };
+    if (account_no) {
+      where.account_no = { [Op.iLike]: `%${account_no}%` };
     }
 
     if (broker_server) {
@@ -501,7 +514,7 @@ export async function getTradeAccs(options = {}) {
     }
 
     const { count, rows } = await TradeAcc.findAndCountAll({
-      attributes: ["id", "accountId", "broker_server", "type", "tradesyncId"],
+      attributes: ["id", "account_no", "broker_server", "type", "tradesyncId"],
       where,
       limit,
       offset,
@@ -533,7 +546,9 @@ export async function getTradeAccById(accountId, userId) {
     // 1) LOCAL FIRST (by id → tradesyncId → accountId)
     let local = null;
     if (isUuid(accountId)) {
-      local = await TradeAcc.findOne({ where: { id: accountId, userId } });
+      local = await TradeAcc.findOne({
+        where: { id: accountId, userId },
+      });
     }
     if (!local && isNumeric(accountId)) {
       local = await TradeAcc.findOne({
@@ -542,7 +557,7 @@ export async function getTradeAccById(accountId, userId) {
     }
     if (!local) {
       local = await TradeAcc.findOne({
-        where: { userId, accountId: accountId },
+        where: { userId, id: accountId },
         order: [["createdAt", "DESC"]],
       });
     }
@@ -555,7 +570,7 @@ export async function getTradeAccById(accountId, userId) {
     // 2) FREE plan rule → always return FREE account
     if (user.plan === "" && (isSync || lookedBySyncId)) {
       const freeAcc = await TradeAcc.findOne({
-        where: { userId, type: "FREE" },
+        where: { userId, type: "FREE", isActive: true },
         order: [["createdAt", "DESC"]],
       });
       if (!freeAcc)
@@ -702,22 +717,27 @@ export async function deleteTradeAcc(accId) {
       );
 
       if (mtAccount) {
-        user.activeTradeAccountId = mtAccount.id;
-        currentAcc = mtAccount;
+        await TradeAcc.update(
+          { isActive: true },
+          { where: { id: mtAccount.id } }
+        );
       } else {
         // Fallback: choose FREE account if no MT accounts exist
         const freeAccount = remainingAccounts.find(
           (acc) => acc.type === "FREE"
         );
-        user.activeTradeAccountId = freeAccount ? freeAccount.id : null;
-        currentAcc = freeAccount;
+        await TradeAcc.update(
+          { isActive: true },
+          { where: { id: freeAccount.id } }
+        );
       }
     } else {
-      // No remaining accounts
-      user.activeTradeAccountId = null;
+      return {
+        success: true,
+        message: "Trade account deleted successfully",
+        data: null,
+      };
     }
-
-    await user.save();
 
     // 5️⃣ Return result
     return {

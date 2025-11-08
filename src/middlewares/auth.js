@@ -4,6 +4,9 @@ import { JWT_SECRET } from "../config/env.js";
 import ApiError from "../utils/ApiError.js";
 import User from "../models/user.model.js";
 import Admin from "../models/admin.model.js";
+import UserSubscription from "../models/user_subscription.model.js";
+import TradeAccount from "../models/trade_account.model.js";
+import Plan from "../models/plan.model.js";
 
 /**
  * Middleware for role-based authentication and authorization
@@ -15,14 +18,6 @@ import Admin from "../models/admin.model.js";
 const auth = (allowedRoles = [], options = {}) => {
   const { userAllowedMethods = [] } = options;
   return async (req, res, next) => {
-    console.log("=== VERIFY JWT DEBUG START ===");
-    console.log("req.headers.authorization:", req.headers.authorization);
-    console.log("req.cookies:", req.cookies);
-    console.log(
-      "process.env.JWT_SECRET:",
-      process.env.JWT_SECRET?.slice(0, 10)
-    ); // partial for safety
-    console.log("=== VERIFY JWT DEBUG END ===");
     try {
       const authHeader = req.headers.authorization;
       const headerToken =
@@ -60,7 +55,59 @@ const auth = (allowedRoles = [], options = {}) => {
       const isAdmin = !!user;
 
       if (!user) {
-        user = await User.findByPk(decoded.sub);
+        user = await User.findByPk(decoded.sub, {
+          order: [["createdAt", "DESC"]],
+          attributes: [
+            "id",
+            "firstName",
+            "lastName",
+            "email",
+            "blocked",
+            "avatar_url",
+            "createdAt",
+            "updatedAt",
+            "role",
+            "plan",
+          ],
+          include: [
+            {
+              model: TradeAccount,
+              as: "tradeAccounts",
+              attributes: [
+                "id",
+                "userId",
+                "type",
+                "isActive",
+                "createdAt",
+                "updatedAt",
+                "account_no",
+                "broker_server",
+                "tradesyncId",
+              ],
+              where: { isActive: true },
+              required: false,
+            },
+            {
+              model: UserSubscription,
+              as: "subscriptions",
+              attributes: [
+                "id",
+                "userId",
+                "planid",
+                "status",
+                "start_date",
+                "current_period_end",
+              ],
+              include: [
+                {
+                  model: Plan,
+                  as: "plan",
+                  attributes: ["id", "name", "code", "price_cents"],
+                },
+              ],
+            },
+          ],
+        });
       }
 
       if (!user) {

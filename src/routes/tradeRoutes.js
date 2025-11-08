@@ -6,7 +6,7 @@ const router = express.Router();
 router.post("/create", tradeController.createTrade);
 router.get("/get", tradeController.getTrades);
 router.post("/update", tradeController.updateTrade);
-router.delete("/delete", tradeController.deleteTrade);
+router.delete("/delete/:id", tradeController.deleteTrade);
 router.delete("/bulk-delete", tradeController.bulkDeleteTrade);
 router.post("/bulk-create", tradeController.bulkCreateTrade);
 

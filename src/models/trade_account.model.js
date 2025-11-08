@@ -9,7 +9,7 @@ const TradeAccount = sequelize.define(
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    accountId: {
+    account_no: {
       type: DataTypes.STRING, // trading account ID (e.g., MT4/MT5 account number)
       allowNull: false,
     },
