@@ -5,6 +5,7 @@ import Users from "../models/user.model.js";
 import stripeService from "./stripeService.js";
 import { Op, Sequelize, where } from "sequelize";
 import User from "../models/user.model.js";
+import PurchasedStrategies from "../models/purchased_strategies.model.js";
 
 export async function createStrategies(strategiesDetails) {
   try {
@@ -57,22 +58,24 @@ export async function getStrategies(query = {}) {
     }
 
     if (userPlan === "ELITE") {
-      // ELITE users can only see ELITE strategies
-      whereClause.type = type;
-    } else if (type) {
-      // Non-ELITE users: filter by type but ignore ELITE
       if (type === "ELITE") {
-        whereClause.type = null; // returns no results if ELITE is requested
-      } else {
+        // explicitly requested ELITE → only ELITE
+        whereClause.type = "ELITE";
+      } else if (type) {
+        // if they specify another type, filter by that normally
         whereClause.type = type;
+      } else {
+        // no specific type → return all strategies (no restriction)
       }
     } else {
+      // Non-ELITE users
       if (type === "PERSONAL") {
         whereClause.type = "PERSONAL";
         whereClause.userId = userId;
+      } else {
+        // exclude ELITE for normal users
+        whereClause.type = { [Op.ne]: "ELITE" };
       }
-      // Non-ELITE users: exclude ELITE strategies
-      whereClause.type = { [Op.ne]: "ELITE" };
     }
 
     if (byUserId) whereClause.userId = byUserId;
@@ -285,6 +288,10 @@ export async function buyStrategy(body) {
     };
 
     const order = await Order.create(orderPayload);
+    const purchasedStrategy = await PurchasedStrategies.create({
+      userId: user.id,
+      strategyId: strategy.id,
+    });
 
     return {
       code: 200,
@@ -293,6 +300,7 @@ export async function buyStrategy(body) {
       data: {
         order,
         payment,
+        purchasedStrategy,
       },
     };
   } catch (error) {

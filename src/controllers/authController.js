@@ -237,8 +237,9 @@ const verifyUserJWT = async (req, res) => {
         role: user?.role,
         plan: user?.plan,
         avatar_url: user?.avatar_url,
-        activeTradeAccountId: user?.activeTradeAccountId,
         blocked: user?.blocked,
+        subscriptions: user?.subscriptions,
+        tradeAccounts: user?.tradeAccounts,
       },
     });
   } catch (error) {

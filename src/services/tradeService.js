@@ -221,9 +221,10 @@ export async function updateTrade(body) {
   }
 }
 
-export async function deleteTrade(body) {
+export async function deleteTrade(id) {
+  console.log(id)
   try {
-    if (!body.id) {
+    if (!id) {
       return {
         code: 400,
         message: "Trade ID is required",
@@ -231,7 +232,7 @@ export async function deleteTrade(body) {
       };
     }
     const trade = await Trade.destroy({
-      where: { id: body.id },
+      where: { id: id },
     });
     return {
       code: 200,

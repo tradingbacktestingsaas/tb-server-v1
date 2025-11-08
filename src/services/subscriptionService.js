@@ -5,12 +5,16 @@ import Order from "../models/order.model.js";
 import stripeService from "./stripeService.js";
 import { createFreeTradeAcc } from "./tradeAccService.js";
 import { Op, Sequelize, where } from "sequelize";
+import TradeAccount from "../models/trade_account.model.js";
+import Plan from "../models/plan.model.js";
 
 export async function subscribe(subscriptionDetails) {
   try {
     // Validate input
     const userId = subscriptionDetails.user_id || subscriptionDetails.userId;
     const planId = subscriptionDetails.plan_id || subscriptionDetails.planId;
+    const interval =
+      subscriptionDetails.interval || subscriptionDetails.interval;
     const paymentMethodId = subscriptionDetails.paymentMethodId;
 
     if (!userId || !planId || !paymentMethodId) {
@@ -91,7 +95,7 @@ export async function subscribe(subscriptionDetails) {
       unitAmountCents: Number(plan.price_cents),
       currency: "usd",
       productName: plan.name,
-      interval: "month",
+      interval: interval || "month",
     });
 
     const stripeSub = await stripeService.createSubscription({
@@ -166,6 +170,7 @@ export async function subscribe(subscriptionDetails) {
 
     // Update user plan field with plan code
     await Users.update({ plan: plan.code }, { where: { id: user.id } });
+    await createFreeTradeAcc(user.id);
 
     return {
       code: 201,
@@ -245,8 +250,22 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
     let userSubscription = await UserSubscription.findOne({
       where: { userId: user.id },
     });
+
     if (userSubscription) {
-      await userSubscription.update(freeSubPayload);
+      const subId = userSubscription.provider_sub_id;
+      const cancelled = await stripeService.cancelSubscription({
+        subscriptionId: subId,
+      });
+      if (cancelled) {
+        await userSubscription.update(freeSubPayload);
+      } else {
+        return {
+          code: 400,
+          success: false,
+          message: "Failed to cancel existing subscription",
+          data: null,
+        };
+      }
     } else {
       userSubscription = await UserSubscription.create(freeSubPayload);
     }
@@ -257,8 +276,6 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
     // Create a FREE Trade Account for the user with random ACC_ prefixed accountId
     const result = await createFreeTradeAcc(user.id);
     try {
-      const tradeAcc = result.tradeAccount || null;
-      user.activeTradeAccountId = tradeAcc.id ;
       await user.save();
     } catch (e) {
       console.error("Failed to create free trade account:", e?.message || e);
@@ -279,7 +296,58 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
     throw new Error(`Failed to create free subscription: ${error}`);
   }
 }
+
+const createCheckoutSession = async ({ planId, userId, coupon, interval }) => {
+  if (coupon) {
+  }
+
+  const plan = await Plans.findByPk(planId);
+  if (!plan) {
+    return {
+      code: 404,
+      success: false,
+      message: "Plan not found",
+      data: null,
+    };
+  }
+
+  // const coupon = coupon
+  //   ? await this.validateCoupon(coupon_code, newPlanCode)
+  //   : null;
+
+  const monthly = plan.price_cents;
+  const base = interval === "month" ? monthly : Math.round(monthly * 12 * 0.8);
+  const discount = coupon
+    ? coupon.type === "percent"
+      ? Math.round(base * (coupon.value / 100))
+      : Math.min(coupon.value, base)
+    : 0;
+  const total = Math.max(0, base - discount);
+
+  const subscriptionDetails = {
+    priceId: plan.stripe_price_id,
+    plan_code: plan.code,
+    total,
+    userId,
+    planId,
+    coupon,
+    interval,
+    discount,
+  };
+
+  try {
+    const session = await stripeService.createCheckoutSession(
+      subscriptionDetails
+    );
+    return { redirect: session.url };
+  } catch (error) {
+    console.error("Error in createCheckoutSession service:", error);
+    throw new Error(`Failed to create checkout session: ${error}`);
+  }
+};
+
 export const subscriptionService = {
   subscribe,
+  createCheckoutSession,
   createFreeSubscription,
 };

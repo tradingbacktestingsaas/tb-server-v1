@@ -1,10 +1,12 @@
 import User from "../models/user.model.js";
-import { Op, Sequelize } from "sequelize";
+import { Op, Sequelize, where } from "sequelize";
 import { encrypt } from "../utils/cryptoUtil.js";
 import { deleteImage, uploadImage } from "../lib/image-kit/index.js";
 import { generateToken } from "../utils/jwt.js";
 import { hashPassword } from "../utils/hash.js";
 import TradeAccount from "../models/trade_account.model.js";
+import UserSubscription from "../models/user_subscription.model.js";
+import Plan from "../models/plan.model.js";
 
 export async function getUsers(options = {}) {
   try {
@@ -129,20 +131,58 @@ export async function getUserById(userId) {
         "updatedAt",
         "role",
         "plan",
-        "activeTradeAccountId",
+      ],
+      include: [
+        {
+          model: TradeAccount,
+          as: "tradeAccounts",
+          attributes: [
+            "id",
+            "userId",
+            "type",
+            "isActive",
+            "createdAt",
+            "updatedAt",
+            "account_no",
+            "broker_server",
+            "tradesyncId",
+          ],
+          where: { isActive: true },
+          required: false,
+        },
+        {
+          model: UserSubscription,
+          as: "subscriptions",
+          attributes: [
+            "id",
+            "userId",
+            "planid",
+            "status",
+            "start_date",
+            "current_period_end",
+          ],
+          include: [
+            {
+              model: Plan,
+              as: "plan",
+              attributes: ["id", "name", "code", "price_cents"],
+            },
+          ],
+        },
       ],
     });
-    if (!user) {
-      throw new Error("User not found");
-    }
 
-    const account = await TradeAccount.findOne({
-      where: { userId: user.id, id: user.activeTradeAccountId },
-    });
+    if (!user) {
+      return {
+        message: "User not found",
+        data: null,
+        success: false,
+      };
+    }
 
     return {
       message: "User fetched successfully",
-      data: { user: user, account: account },
+      data: { user: user },
       success: true,
     };
   } catch (error) {

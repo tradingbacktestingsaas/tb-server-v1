@@ -17,7 +17,14 @@ export async function register(userDetail) {
   const existing = await User.findOne({ where: { email: userDetail.email } });
   if (existing) throw createError(409, "Email already registered");
   const passwordHash = await hashPassword(userDetail.password);
-  const user = await User.create({ ...userDetail, password: passwordHash });
+  const email = userDetail.email.toLowerCase();
+  const type = userDetail.type;
+  const user = await User.create({
+    ...userDetail,
+    email,
+    type,
+    password: passwordHash,
+  });
   const token = generateToken(
     {
       sub: user.id,
@@ -28,7 +35,7 @@ export async function register(userDetail) {
       plan: user.plan,
       blocked: user.blocked,
       avatar_url: user.avatar_url,
-      type: "user",
+      type: user.type,
     },
     "1h"
   );
@@ -50,7 +57,6 @@ export async function login({ email, password }) {
       "avatar_url",
       "createdAt",
       "updatedAt",
-      "activeTradeAccountId",
       "role",
       "plan",
     ],
