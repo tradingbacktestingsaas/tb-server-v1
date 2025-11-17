@@ -13,11 +13,26 @@ const getTradeAcc = async (req, res) => {
     });
   }
 };
+
+const getAccountStatus = async (req, res) => {
+  try {
+    const tradeAcc = await tradeAccService.getAccountStatus(req.params.id);
+    return res.status(201).json(tradeAcc);
+  } catch (error) {
+    return res.status(400).json({
+      code: 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+}
+
 const getTradeAccById = async (req, res) => {
   try {
     const tradeAcc = await tradeAccService.getTradeAccById(
-      req.params.id,
-      req.body.userId
+      req.query.accountId,
+      req.query.userId
     );
     return res.status(201).json(tradeAcc);
   } catch (error) {
@@ -160,6 +175,7 @@ export const tradeAccController = {
   bulkDeleteTradeAcc,
   bulkCreateTradeAcc,
   switchTradeAcc,
+  getAccountStatus,
   activeTradeAcc,
   // getBrokersServer,
   getBrokers,

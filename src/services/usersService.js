@@ -85,6 +85,44 @@ export async function uploadAvatar(userId, req) {
         "role",
         "plan",
       ],
+      include: [
+        {
+          model: TradeAccount,
+          as: "tradeAccounts",
+          attributes: [
+            "id",
+            "userId",
+            "type",
+            "isActive",
+            "createdAt",
+            "updatedAt",
+            "account_no",
+            "broker_server",
+            "tradesyncId",
+          ],
+          where: { isActive: true },
+          required: false,
+        },
+        {
+          model: UserSubscription,
+          as: "subscriptions",
+          attributes: [
+            "id",
+            "userId",
+            "planid",
+            "status",
+            "start_date",
+            "current_period_end",
+          ],
+          include: [
+            {
+              model: Plan,
+              as: "plan",
+              attributes: ["id", "name", "code", "price_cents", "features"],
+            },
+          ],
+        },
+      ],
     });
     if (!user) {
       throw new Error("User not found");
@@ -165,7 +203,7 @@ export async function getUserById(userId) {
             {
               model: Plan,
               as: "plan",
-              attributes: ["id", "name", "code", "price_cents"],
+              attributes: ["id", "name", "code", "price_cents", "features"],
             },
           ],
         },

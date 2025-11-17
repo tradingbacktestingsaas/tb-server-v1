@@ -84,8 +84,8 @@ export const couponController = {
 
   validateCoupon: async (req, res) => {
     try {
-      const { code, plan_code } = req.body;
-      const coupon = await courponService.validateCoupon(code, plan_code);
+      console.log("Validating coupon with data:", req.body);  
+      const coupon = await courponService.validateCoupon(req.body);
       return res.status(coupon.code).json(coupon);
     } catch (error) {
       return res.status(400).json({

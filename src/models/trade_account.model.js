@@ -21,6 +21,10 @@ const TradeAccount = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
+    broker_server_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
     tradesyncId: {
       type: DataTypes.STRING,
       allowNull: true, // ID used for syncing with external trading service
