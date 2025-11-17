@@ -8,7 +8,7 @@ router.get("/get", strategiesController.getStrategies);
 router.patch("/update", strategiesController.updateStrategies);
 router.delete("/delete/:id", strategiesController.deleteStrategies);
 router.post("/buy-strategy", strategiesController.buyStrategy);
+router.get("/purchased", strategiesController.getPurchasedStrategies);
 router.post("/bulk", strategiesController.bulkCreate);
-
 
 export default router;

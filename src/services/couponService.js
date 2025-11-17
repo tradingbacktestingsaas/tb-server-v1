@@ -1,5 +1,4 @@
-import Coupon from "../models/coupon.model";
-import Plan from "../models/plan.model";
+import Coupon from "../models/coupon.model.js";
 
 const createCoupon = async (coupon) => {
   const created = await Coupon.create(coupon);
@@ -109,9 +108,9 @@ const bulkDelete = async (body) => {
   };
 };
 
-const validateCoupon = async (code, plan_code) => {
+const validateCoupon = async ({code}) => {
   const coupon = await Coupon.findOne({ where: { code, isActive: true } });
-
+  
   if (!coupon) {
     return {
       code: 404,
@@ -123,18 +122,9 @@ const validateCoupon = async (code, plan_code) => {
 
   if (coupon.expiryDate < new Date()) {
     return {
-      code: 400,
+      code: 422,
       success: false,
       message: "Coupon expired",
-      data: null,
-    };
-  }
-
-  if (!(c.applies_to === plan_code || coupon.applies_to === "all")) {
-    return {
-      code: 400,
-      success: false,
-      message: "Coupon not applicable to this plan",
       data: null,
     };
   }

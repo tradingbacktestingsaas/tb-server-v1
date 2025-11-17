@@ -6,6 +6,7 @@ import stripeService from "./stripeService.js";
 import { Op, Sequelize, where } from "sequelize";
 import User from "../models/user.model.js";
 import PurchasedStrategies from "../models/purchased_strategies.model.js";
+import { createNotification } from "./notificationService.js";
 
 export async function createStrategies(strategiesDetails) {
   try {
@@ -22,6 +23,38 @@ export async function createStrategies(strategiesDetails) {
   } catch (error) {
     console.error("Error in createStrategies service:", error);
     throw new Error(`Failed to create strategies: ${error}`);
+  }
+}
+
+export async function getPurchasedStrategies(id, user_id) {
+  let where = {};
+  try {
+    if (id) {
+      where.strategyId = id;
+    }
+
+    if (user_id) {
+      where.userId = user_id;
+    }
+
+    const strategies = await PurchasedStrategies.findAll({ where });
+    if (!strategies) {
+      return {
+        code: 201,
+        message: "Strategies not created",
+        data: [],
+        success: true,
+      };
+    }
+    return {
+      code: 201,
+      message: "Strategies created successfully",
+      data: strategies,
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error in getPurchasedStrategies service:", error);
+    throw new Error(`Failed to get strategies: ${error}`);
   }
 }
 
@@ -59,13 +92,9 @@ export async function getStrategies(query = {}) {
 
     if (userPlan === "ELITE") {
       if (type === "ELITE") {
-        // explicitly requested ELITE → only ELITE
         whereClause.type = "ELITE";
       } else if (type) {
-        // if they specify another type, filter by that normally
         whereClause.type = type;
-      } else {
-        // no specific type → return all strategies (no restriction)
       }
     } else {
       // Non-ELITE users
@@ -73,9 +102,16 @@ export async function getStrategies(query = {}) {
         whereClause.type = "PERSONAL";
         whereClause.userId = userId;
       } else {
-        // exclude ELITE for normal users
         whereClause.type = { [Op.ne]: "ELITE" };
       }
+    }
+
+    // ❗ Always hide PERSONAL strategies from other users
+    if (userId) {
+      whereClause[Op.or] = [
+        { type: { [Op.ne]: "PERSONAL" } }, // allow all non-personal strategies
+        { userId: userId }, // allow only MY personal strategies
+      ];
     }
 
     if (byUserId) whereClause.userId = byUserId;
@@ -288,6 +324,13 @@ export async function buyStrategy(body) {
     };
 
     const order = await Order.create(orderPayload);
+    await createNotification({
+      userId: order.userId,
+      title: "Your subscription ist started!",
+      type: "alert",
+      message:
+        "Your subscription is now active. You can start connecting your live accounts.",
+    });
     const purchasedStrategy = await PurchasedStrategies.create({
       userId: user.id,
       strategyId: strategy.id,
@@ -343,4 +386,5 @@ export const strategiesService = {
   deleteStrategies,
   buyStrategy,
   bulkCreateStrategy,
+  getPurchasedStrategies,
 };

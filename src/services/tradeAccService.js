@@ -32,7 +32,9 @@ const toDTO = (local, remote) => ({
   type: local.type, // FREE | MT4 | MT5
   account_no: remote?.account_number ?? local.account_no ?? null,
   broker_server: remote?.broker_server ?? local.broker_server ?? null,
+  broker_server_id: remote?.broker_server_id ?? local.broker_server_id ?? null,
   tradesyncId: local.tradesyncId ?? remote?.id ?? null,
+  status: local.status ?? remote?.status ?? null,
   isActive: !!local.isActive,
   createdAt: local.createdAt,
 });
@@ -44,7 +46,8 @@ export async function createTradeAcc(accDetails) {
     if (!accDetails.userId) throw new Error("userId is required");
     if (!accDetails.type) throw new Error("type is required (MT4 | MT5)");
     if (!accDetails.broker_server) throw new Error("type is broker_server");
-    if (!accDetails.broker_name) throw new Error("type is broker_name");
+    if (!accDetails.broker_server_id)
+      throw new Error("type is broker_server_id");
     if (!accDetails.investor_password)
       throw new Error("investor_password is required");
 
@@ -90,7 +93,7 @@ export async function createTradeAcc(accDetails) {
         account_number: accDetails?.account_no ?? null,
         password: accDetails?.investor_password ?? null,
         application: accDetails?.type?.toLowerCase() ?? null,
-        broker_server_id: accDetails?.broker_server ?? null,
+        broker_server_id: accDetails?.broker_server_id ?? null,
         type: "readonly",
       },
       {
@@ -101,19 +104,27 @@ export async function createTradeAcc(accDetails) {
       }
     );
 
+    if (!syncAccount) {
+      return {
+        message: "Invalid Credentials",
+        data: null,
+        success: false,
+      };
+    }
     if (syncAccount?.data?.result === "success") {
       await TradeAcc.create(
         {
           ...accDetails,
           tradesyncId: syncAccount.data?.data?.id,
-          broker_server: accDetails?.broker_name,
+          broker_server: accDetails?.broker_server,
+          broker_server_id: accDetails?.broker_server_id,
           userId: accDetails.userId,
         },
         { transaction: t }
       );
     } else {
       return {
-        message: "Failed to create trade account",
+        message: "Invalid Credentials",
         data: null,
         success: false,
       };
@@ -124,6 +135,7 @@ export async function createTradeAcc(accDetails) {
     return {
       message: "Trade account created successfully",
       data: syncAccount.data?.data,
+      status: 201,
       success: true,
     };
   } catch (error) {
@@ -133,6 +145,19 @@ export async function createTradeAcc(accDetails) {
       `Failed to create trade account: ${error.message || error}`
     );
   }
+}
+
+export async function getAccountStatus(tradesyncId) {
+  const res = await axios.get(
+    `${config.trade_sync.url}/accounts/${tradesyncId}`,
+    {
+      auth: {
+        username: config.trade_sync.key,
+        password: config.trade_sync.secret,
+      },
+    }
+  );
+  return res.data?.data;
 }
 
 export async function getBrokers(req) {
@@ -266,31 +291,19 @@ export async function getBrokers(req) {
 
 export async function switchTradeAcc({ userId, tradeAccId, type }) {
   try {
-    if (!tradeAccId) {
-      throw new Error("tradeAccId is required");
-    }
+    if (!tradeAccId) throw new Error("tradeAccId is required");
 
     const user = await User.findByPk(userId);
-    if (!user) {
-      throw new Error("User not found");
-    }
+    if (!user) throw new Error("User not found");
 
-    // Handle FREE local accounts
-    if (type === "FREE") {
-      const tradeAcc = await TradeAcc.findByPk(tradeAccId, {
-        where: { userId: user.id, isActive: false },
-      });
-      if (!tradeAcc) {
-        throw new Error("Trade account not found");
-      }
+    // Fetch the trade account properly
+    const tradeAcc = await TradeAcc.findOne({
+      where: { id: tradeAccId, userId: user.id },
+    });
 
-      // Ensure the account belongs to the user (safety check)
-      if (tradeAcc.userId && String(tradeAcc.userId) !== String(user.id)) {
-        throw new Error("Trade account does not belong to the user");
-      }
+    if (!tradeAcc) throw new Error("Trade account not found");
 
-      tradeAcc.isActive = true;
-      await tradeAcc.save();
+    if (tradeAcc.isActive) {
       return {
         message: "Trade account switched successfully",
         data: tradeAcc,
@@ -298,7 +311,30 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
       };
     }
 
-    // SYNC accounts (MT4/MT5)
+    // ============ FREE ACCOUNT HANDLING ============
+    if (type === "FREE") {
+      // deactivate all accounts
+      await TradeAccount.update(
+        { isActive: false },
+        {
+          where: {
+            userId: user.id,
+            type: { [Op.in]: ["MT4", "MT5"] },
+          },
+        }
+      );
+
+      // activate the selected one
+      await tradeAcc.update({ isActive: true, type: "FREE" });
+
+      return {
+        message: "Trade account switched successfully",
+        data: tradeAcc,
+        success: true,
+      };
+    }
+
+    // ============ MT4 / MT5 ACCOUNT HANDLING ============
     if (type === "MT4" || type === "MT5") {
       if (user.plan === "FREE") {
         throw new Error(
@@ -306,18 +342,7 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
         );
       }
 
-      // Ensure the account belongs to the user (safety check)
-      const tradeAcc = await TradeAcc.findByPk(tradeAccId, {
-        where: { userId: user.id, isActive: false },
-      });
-      if (!tradeAcc) {
-        throw new Error("Trade account not found");
-      }
-      if (tradeAcc.userId && String(tradeAcc.userId) !== String(user.id)) {
-        throw new Error("Trade account does not belong to the user");
-      }
-
-      // Try to fetch the specific synced account from the remote service first
+      // Try remote fetch
       let syncedAccount = null;
       try {
         const resp = await axios.get(
@@ -330,34 +355,38 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
           }
         );
         syncedAccount = resp?.data?.data || null;
-      } catch (err) {
-        // If fetching single account fails, fallback to listing and finding
-        try {
-          const listResp = await axios.get(
-            `${config.trade_sync.url}/accounts`,
-            {
-              auth: {
-                username: config.trade_sync.key,
-                password: config.trade_sync.secret,
-              },
-            }
-          );
-          const accounts = listResp?.data?.data || listResp?.data;
-          if (Array.isArray(accounts)) {
-            syncedAccount = accounts.find(
-              (acc) => String(acc.id) === String(tradeAccId)
-            );
-          }
-        } catch (listErr) {
-          // no-op - we'll handle not found below
+      } catch {
+        // fallback: list all
+        const listResp = await axios.get(`${config.trade_sync.url}/accounts`, {
+          auth: {
+            username: config.trade_sync.key,
+            password: config.trade_sync.secret,
+          },
+        });
+
+        const accounts = listResp?.data?.data || [];
+        syncedAccount = accounts.find(
+          (acc) => String(acc.id) === String(tradeAcc.tradesyncId)
+        );
+      }
+
+      if (!syncedAccount)
+        throw new Error("Trade account not found in sync service");
+
+      // deactivate all accounts
+      await TradeAccount.update(
+        { isActive: false },
+        {
+          where: {
+            userId: user.id,
+            type: { [Op.in]: ["MT4", "MT5", "FREE"] },
+          },
         }
-      }
+      );
 
-      if (!syncedAccount) {
-        throw new Error("Trade account not found");
-      }
-
+      // activate selected account
       await tradeAcc.update({ type, isActive: true });
+
       return {
         message: "Trade account switched successfully",
         data: tradeAcc,
@@ -368,7 +397,7 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
     throw new Error("Invalid account type");
   } catch (err) {
     console.error("Error in switchTradeAcc:", err);
-    throw new Error(`Failed to switch trade account: ${err.message || err}`);
+    throw new Error(`Failed to switch trade account: ${err.message}`);
   }
 }
 
@@ -392,86 +421,71 @@ export async function activeTradeAcc(userId) {
 }
 
 export async function createFreeTradeAcc(userId) {
-  try {
-    if (!userId) throw new Error("User ID is required");
+  if (!userId) throw new Error("User ID is required");
 
-    const user = await User.findByPk(userId);
-    if (!user) throw new Error("User not found");
+  const user = await User.findByPk(userId);
+  if (!user) throw new Error("User not found");
 
-    const existing = await TradeAccount.findOne({
-      where: { userId: userId, type: "FREE" },
-    });
+  const existing = await TradeAccount.findOne({
+    where: { userId, type: "FREE" },
+  });
 
-    const activeMTAccounts = await TradeAccount.findAll({
-      where: { userId: userId, type: { [Op.in]: ["MT4", "MT5"] } },
-    });
-    
-    if (activeMTAccounts.length > 0) {
-      activeMTAccounts.forEach((acc) => (acc.isActive = false));
+  await TradeAccount.update(
+    { isActive: false },
+    {
+      where: { userId, type: { [Op.in]: ["MT4", "MT5"] } },
     }
+  );
 
-    if (existing) {
-      existing.isActive = true;
-      await existing.save();
-      return {
-        message: "Downgraded to free",
-        tradeAccount: existing,
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          blocked: user.blocked,
-          plan: user.plan,
-          avatar_url: user.avatar_url,
-          active: user.active,
-          type: user.type,
-          role: user.role,
-        },
-        success: true,
-      };
-    }
+  const userData = {
+    id: user.id,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    blocked: user.blocked,
+    plan: user.plan,
+    avatar_url: user.avatar_url,
+    active: user.active,
+    type: user.type,
+    role: user.role,
+  };
 
-    // Generate random accountId with ACC_ prefix
-    const randomSuffix = Math.random().toString(36).slice(2, 10).toUpperCase();
-    const accountId = `ACC_${randomSuffix}`;
-
-    // Model requires non-null investor_password and broker_server
-    const payload = {
-      userId,
-      account_no: accountId,
-      investor_password: "", // stored empty due to NOT NULL constraint
-      broker_server: "", // stored empty due to NOT NULL constraint
-      tradesyncId: null,
-      token: null,
-      type: "FREE",
-      isActive: true,
-    };
-
-    const tradeAccount = await TradeAccount.create(payload);
-    if (!tradeAccount) throw new Error("Trade account not created");
-
+  if (existing) {
+    existing.isActive = true;
+    await existing.save();
     return {
-      message: "Free trade account created successfully",
-      tradeAccount: tradeAccount,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        blocked: user.blocked,
-        plan: user.plan,
-        avatar_url: user.avatar_url,
-        active: user.active,
-        type: user.type,
-        role: user.role,
-      },
+      message: "Downgraded to free",
+      tradeAccount: existing,
+      user: userData,
       success: true,
     };
-  } catch (error) {
-    console.error("Error in createFreeTradeAcc service:", error);
-    throw new Error(`Failed to create free trade account: ${error}`);
   }
+
+  const accountId = `ACC_${Math.random()
+    .toString(36)
+    .slice(2, 10)
+    .toUpperCase()}`;
+
+  const tradeAccount = await TradeAccount.create({
+    userId,
+    account_no: accountId,
+    investor_password: "",
+    broker_server: "",
+    broker_server_id: "",
+    tradesyncId: null,
+    token: null,
+    type: "FREE",
+    isActive: true,
+  });
+
+  if (!tradeAccount) throw new Error("Trade account not created");
+
+  return {
+    message: "Free trade account created successfully",
+    tradeAccount,
+    user: userData,
+    success: true,
+  };
 }
 
 export async function getTradeAccs(options = {}) {
@@ -493,6 +507,7 @@ export async function getTradeAccs(options = {}) {
       throw new Error("User not found");
     }
 
+    // Filters
     if (account_no) {
       where.account_no = { [Op.iLike]: `%${account_no}%` };
     }
@@ -509,26 +524,101 @@ export async function getTradeAccs(options = {}) {
       where.userId = user.id;
     }
 
+    // FREE plan → only local FREE accounts
     if (user.plan === "FREE") {
       where.type = "FREE";
     }
 
-    const { count, rows } = await TradeAcc.findAndCountAll({
-      attributes: ["id", "account_no", "broker_server", "type", "tradesyncId"],
+    // Fetch LOCAL accounts (MT4 + MT5 stored in DB)
+    const { count, rows: localTradeAccs } = await TradeAcc.findAndCountAll({
+      attributes: [
+        "id",
+        "account_no",
+        "broker_server",
+        "broker_server_id",
+        "type",
+        "tradesyncId",
+      ],
       where,
       limit,
       offset,
       order: [["createdAt", "DESC"]],
     });
 
+    // Remote array holder
+    let remoteTradeAccs = [];
+
+    // -------------- TRADE SYNC LOGIC --------------
+    if (["STANDARD", "ELITE"].includes(user.plan)) {
+      try {
+        // 1️⃣ Extract tradesyncIds from local accounts
+        const tradesyncIds = localTradeAccs
+          .filter((acc) => acc.tradesyncId)
+          .map((acc) => acc.tradesyncId);
+
+        // 2️⃣ Request remote account details for each
+        const remoteResponses = await Promise.all(
+          tradesyncIds.map(async (id) => {
+            try {
+              const res = await tradeSyncGet(`/accounts/${id}`);
+              return res.data?.data || res.data;
+            } catch (err) {
+              console.warn(
+                `Failed to fetch remote account ${id}:`,
+                err.message
+              );
+              return null;
+            }
+          })
+        );
+
+        // 3️⃣ Filter out failed/null responses
+        const remoteData = remoteResponses.filter(Boolean);
+
+        // 4️⃣ Normalize remote accounts
+        remoteTradeAccs = remoteData.map((acc) => ({
+          remoteId: acc.id, // keep remote id separate
+          account_no: acc.account_number,
+          broker_server: acc.server,
+          type: (acc.application || acc.type || "REMOTE").toUpperCase(), // UPPERCASE
+          application: (acc.application || "").toUpperCase(),
+          tradesyncId: acc.id,
+          investor_password: acc.password,
+          remote: true,
+          status: acc.status || "UNKNOWN",
+        }));
+      } catch (err) {
+        console.warn("TradeSync bulk fetch failed:", err.message);
+      }
+    }
+    // -------------- END TRADE SYNC LOGIC --------------
+
+    // -------------- MERGE REMOTE VALUES INTO LOCAL RECORDS --------------
+    const tradeAccs = localTradeAccs.map((local) => {
+      const remote = remoteTradeAccs.find(
+        (r) => Number(r.tradesyncId) === Number(local.tradesyncId)
+      );
+
+      if (!remote) return local;
+
+      return {
+        ...local.dataValues, // keep local id
+        ...remote, // add remote values
+        id: local.id, // FORCE id to remain local DB ID
+        broker_server: local.broker_server,
+        broker_server_id: local.broker_server_id,
+        tradesyncId: remote.tradesyncId,
+      };
+    });
+
     return {
-      tradeAccs: rows,
-      totalCount: count,
+      tradeAccs,
+      totalCount: tradeAccs.length,
       success: true,
       message: "Trade accounts fetched successfully",
     };
   } catch (error) {
-    console.error("Error in getTradeAccs service:", error);
+    console.error("Error in getTradeAccs:", error);
     throw new Error(
       `Failed to fetch trade accounts: ${error.message || error}`
     );
@@ -772,6 +862,7 @@ export async function deleteTradeAcc(accId) {
 
 export async function updateTradeAcc(accId, accDetails) {
   try {
+    let encryptedPassword = null;
     const tradeAcc = await TradeAcc.findByPk(accId, {
       include: [{ model: User, as: "user" }],
     });
@@ -782,45 +873,51 @@ export async function updateTradeAcc(accId, accDetails) {
 
     // Encrypt investor password if provided
     if (accDetails?.investor_password) {
-      accDetails.investor_password = encrypt(accDetails.investor_password);
+      encryptedPassword = encrypt(accDetails.investor_password);
     }
 
     // ✅ Only sync with TradeSync if: MT4 or MT5 and user plan is FREE
     const isMTType = ["MT4", "MT5"].includes(tradeAcc.type);
     const isFreeUser = tradeAcc.user?.plan === "FREE";
 
-    if (isMTType && isFreeUser && tradeAcc.tradesyncId) {
+    if (isMTType && !isFreeUser && tradeAcc.tradesyncId) {
       console.log("🔄 Updating TradeSync connection...");
 
       // TradeSync request payload (must match API docs)
       const payload = {
-        broker_server_id:
-          accDetails.broker_server_id || tradeAcc.broker_server_id,
-        password: accDetails.password || accDetails.investor_password, // depends on your naming
+        broker_server_id: accDetails.broker_server_id,
+        password: accDetails.investor_password, // depends on your naming
       };
 
+      console.log(payload);
       // Validation check
       if (!payload.broker_server_id || !payload.password) {
         console.warn("⚠️ Missing required fields for TradeSync update");
       } else {
         // Auth credentials from .env
         const tradesyncAuth = {
-          username: process.env.TRADESYNC_API_KEY,
-          password: process.env.TRADESYNC_API_SECRET,
+          username: config.trade_sync.key,
+          password: config.trade_sync.secret,
         };
 
         // Make API request to update connection
         const url = `https://api.tradesync.com/accounts/${tradeAcc.tradesyncId}/connection`;
 
         try {
-          const response = await axios.put(url, payload, {
+          const response = await axios.patch(url, payload, {
             auth: tradesyncAuth,
           });
+          console.log(response);
 
           if (response.data?.result === "success") {
             console.log("✅ TradeSync connection updated successfully");
           } else {
             console.warn("⚠️ TradeSync update returned:", response.data);
+            return {
+              success: false,
+              message: "Failed to update TradeSync connection",
+              data: response.message,
+            };
           }
         } catch (apiError) {
           console.error(
@@ -832,7 +929,10 @@ export async function updateTradeAcc(accId, accDetails) {
     }
 
     // Update locally in your database
-    const updatedTradeAcc = await tradeAcc.update(accDetails);
+    const updatedTradeAcc = await tradeAcc.update({
+      ...accDetails,
+      investor_password: encryptedPassword,
+    });
 
     return {
       success: true,
@@ -857,5 +957,6 @@ export const tradeAccService = {
   activeTradeAcc,
   switchTradeAcc,
   getBrokers,
+  getAccountStatus,
   // getBrokersServer,
 };

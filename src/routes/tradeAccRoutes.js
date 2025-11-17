@@ -4,7 +4,8 @@ const router = express.Router();
 
 // Authentication routes
 router.get("/get", tradeAccController.getTradeAcc);
-router.get("/get/:id", tradeAccController.getTradeAccById);
+router.get("/status/:id", tradeAccController.getAccountStatus);
+router.get("/get-one", tradeAccController.getTradeAccById);
 router.post("/create", tradeAccController.createTradeAcc);
 router.patch("/update/:id", tradeAccController.updateTradeAcc);
 router.delete("/delete/:id", tradeAccController.deleteTradeAcc);

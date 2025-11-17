@@ -26,6 +26,23 @@ const getStrategies = async (req, res) => {
   }
 };
 
+const getPurchasedStrategies = async (req, res) => {
+  try {
+    const { id, user_id } = req.query;
+    const strategies = await strategiesService.getPurchasedStrategies(
+      id,
+      user_id
+    );
+    return res.status(200).json(strategies);
+  } catch (error) {
+    return res.status(error.code || 500).json({
+      code: error.code || 500,
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
 const updateStrategies = async (req, res) => {
   try {
     const strategies = await strategiesService.updateStrategies(req.body);
@@ -51,7 +68,6 @@ const deleteStrategies = async (req, res) => {
     });
   }
 };
-
 
 const buyStrategy = async (req, res) => {
   try {
@@ -82,6 +98,7 @@ const bulkCreate = async (req, res) => {
 export const strategiesController = {
   createStrategies,
   getStrategies,
+  getPurchasedStrategies,
   updateStrategies,
   deleteStrategies,
   buyStrategy,

@@ -7,6 +7,29 @@ import { createFreeTradeAcc } from "./tradeAccService.js";
 import { Op, Sequelize, where } from "sequelize";
 import TradeAccount from "../models/trade_account.model.js";
 import Plan from "../models/plan.model.js";
+import Coupon from "../models/coupon.model.js";
+import { createNotification } from "./notificationService.js";
+
+const validateCoupon = async (code, plan_code) => {
+  const coupon = await Coupon.findOne({
+    where: { code: code, isActive: true },
+  });
+
+  if (!(coupon.appliesTo === plan_code)) {
+    return {
+      code: 422,
+      success: false,
+      message: "Coupon not applicable to this plan",
+      coupon: null,
+      coupon_id: null,
+    };
+  }
+  return {
+    success: true,
+    coupon,
+    coupon_id: coupon.id,
+  };
+};
 
 export async function subscribe(subscriptionDetails) {
   try {
@@ -258,6 +281,13 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
       });
       if (cancelled) {
         await userSubscription.update(freeSubPayload);
+        await createNotification({
+          userId: user.id,
+          title: "Downgraded to FREE plan",
+          type: "alert",
+          message:
+            "You have downgraded to FREE plan. We are glad to have you on our platform. You can continue manual trading on our platform.",
+        });
       } else {
         return {
           code: 400,
@@ -268,6 +298,13 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
       }
     } else {
       userSubscription = await UserSubscription.create(freeSubPayload);
+      await createNotification({
+        userId: user.id,
+        title: "Welcome to Trading Backtesting Platform",
+        type: "alert",
+        message:
+          "We are glad to have you on our platform. You can start manual trading on our platform.",
+      });
     }
 
     // Update user's plan field to plan.code
@@ -298,9 +335,6 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
 }
 
 const createCheckoutSession = async ({ planId, userId, coupon, interval }) => {
-  if (coupon) {
-  }
-
   const plan = await Plans.findByPk(planId);
   if (!plan) {
     return {
@@ -311,26 +345,38 @@ const createCheckoutSession = async ({ planId, userId, coupon, interval }) => {
     };
   }
 
-  // const coupon = coupon
-  //   ? await this.validateCoupon(coupon_code, newPlanCode)
-  //   : null;
+  const validatedCoupon = coupon
+    ? await validateCoupon(coupon, plan.code)
+    : null;
+
+  if (validatedCoupon?.success === false) {
+    return {
+      code: validatedCoupon.code,
+      success: false,
+      message: validatedCoupon.message,
+      data: null,
+    };
+  }
 
   const monthly = plan.price_cents;
-  const base = interval === "month" ? monthly : Math.round(monthly * 12 * 0.8);
+  const base = interval === "month" ? monthly : Math.round(monthly * 12);
+  const value = Number(validatedCoupon?.coupon.value);
+  const couponId = validatedCoupon?.coupon_id;
   const discount = coupon
-    ? coupon.type === "percent"
-      ? Math.round(base * (coupon.value / 100))
-      : Math.min(coupon.value, base)
+    ? validatedCoupon?.coupon.type === "percent"
+      ? Math.round(base * (value / 100))
+      : Math.min(value, base)
     : 0;
+
   const total = Math.max(0, base - discount);
 
   const subscriptionDetails = {
-    priceId: plan.stripe_price_id,
-    plan_code: plan.code,
     total,
+    plan_code: plan.code,
     userId,
     planId,
     coupon,
+    couponId,
     interval,
     discount,
   };

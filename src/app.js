@@ -25,6 +25,12 @@ import subscriptionRoutes from "./routes/subscriptionRoute.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import ordersRoutes from "./routes/ordersRoutes.js";
 import webhookRoute from "./routes/stripeWebhook.js";
+import couponRoutes from "./routes/couponRoutes.js";
+
+import {
+  startSubscriptionCron,
+  reminderSubscriptionCron,
+} from "./cron/subscriptionChecker.js";
 
 const app = express();
 const globalPrefix = "/public/api/v1";
@@ -62,7 +68,6 @@ app.use("/webhook", (req, res, next) => {
 });
 
 app.use(`/webhook`, webhookRoute);
-
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 app.use(express.json());
@@ -91,6 +96,10 @@ app.use(`${globalPrefix}/plans`, plansRoutes);
 app.use(`${globalPrefix}/subscription`, subscriptionRoutes);
 app.use(`${globalPrefix}/analytics`, analyticsRoutes);
 app.use(`${globalPrefix}/orders`, ordersRoutes);
+app.use(`${globalPrefix}/coupons`, couponRoutes);
+
+startSubscriptionCron();
+reminderSubscriptionCron();
 
 app.use((req, res, next) => {
   next(new ApiError(httpStatus.NOT_FOUND, "Not found"));

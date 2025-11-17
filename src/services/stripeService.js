@@ -7,6 +7,8 @@ import UserSubscription from "../models/user_subscription.model.js";
 import Plans from "../models/plan.model.js";
 import { createFreeTradeAcc } from "./tradeAccService.js";
 import TradeAccount from "../models/trade_account.model.js";
+import Coupon from "../models/coupon.model.js";
+import { createNotification } from "./notificationService.js";
 
 // Initialize Stripe with the API key
 const stripe = new Stripe(config.stripe.secretKey);
@@ -116,20 +118,39 @@ const createOrder = async ({
   return createdOrder;
 };
 
+const validateCoupon = async (code, plan_code) => {
+  const coupon = await Coupon.findOne({
+    where: { code: code, isActive: true },
+  });
+
+  if (!(coupon.appliesTo === plan_code || coupon.appliesTo === "all")) {
+    return {
+      code: 422,
+      success: false,
+      message: "Coupon not applicable to this plan",
+      data: null,
+    };
+  }
+  return coupon;
+};
+
 const createCheckoutSession = async ({
   total,
   plan_code,
   userId,
   planId,
   coupon,
+  couponId,
   interval,
   discount,
 }) => {
+  console.log(coupon);
+
   const customer = await ensureStripeCustomer(userId);
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: "subscription",
-    success_url: `${config.frontendUrl}/subscription/success`,
-    cancel_url: `${config.frontendUrl}/subscription/cancel`,
+    success_url: `${config.frontendUrl}/plans/success`,
+    cancel_url: `${config.frontendUrl}/plans/cancel`,
     customer: customer,
     line_items: [
       {
@@ -147,6 +168,7 @@ const createCheckoutSession = async ({
       plan_code: plan_code,
       interval,
       coupon_code: coupon ?? "",
+      coupon_id: couponId ?? "",
     },
   });
 
@@ -345,6 +367,7 @@ const handleStripeEvents = async (event) => {
         const userId = meta.userId;
         const planCode = meta.plan_code;
         const interval = meta.interval || null;
+        const couponId = meta.coupon_id || null;
         const subscriptionId =
           typeof session.subscription === "string"
             ? session.subscription
@@ -415,6 +438,7 @@ const handleStripeEvents = async (event) => {
               invoiceId: latestInvoiceId || null,
               hostedInvoiceUrl: hostedInvoiceUrl,
               cycle: interval,
+              couponId: couponId,
             });
           }
         } catch (e) {
@@ -463,9 +487,22 @@ const handleStripeEvents = async (event) => {
             await TradeAccount.create({
               userId: user.id,
               type: "FREE",
+              isActive: true,
+              tradesyncId: "",
+              broker_server: "",
+              broker_server_id: "",
+              investor_password: "",
               account_no: account_no,
             });
           }
+
+          await createNotification({
+            userId: user.id,
+            title: "Your subscription ist started!",
+            type: "alert",
+            message:
+              "Your subscription is now active. You can start connecting your live accounts.",
+          });
         } catch (e) {
           console.error("createFreeTradeAcc failed:", e?.message || e);
         }
