@@ -4,7 +4,7 @@ import User from "../models/user.model.js";
 import Plan from "../models/plan.model.js";
 import Strategy from "../models/strategies.model.js";
 
-export async function getOrders({ limit = 10, page = 0, filters }) {
+export async function getOrders({ limit, page, filters }) {
   try {
     const where = {};
     const jsonFilters =
@@ -35,7 +35,7 @@ export async function getOrders({ limit = 10, page = 0, filters }) {
     const { count, rows } = await Order.findAndCountAll({
       where,
       limit,
-      page,
+      offset: (page - 1) * limit,
       order: [["created_at", "DESC"]],
       attributes: [
         "id",
