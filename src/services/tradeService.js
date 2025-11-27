@@ -5,6 +5,69 @@ import User from "../models/user.model.js";
 import axios from "axios";
 import config from "../config/env.js";
 
+function applyTradeFilters(trades, { selectedDate, month }) {
+  const now = new Date();
+
+  // Helper
+  const getDate = (t) => new Date(t.open_time || t.close_time);
+
+  // ---------------------------
+  // 🔹 1. selectedDate (exact day)
+  // ---------------------------
+  if (selectedDate) {
+    const start = new Date(selectedDate);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+
+    return trades.filter((t) => {
+      const d = getDate(t);
+      return d >= start && d < end;
+    });
+  }
+
+  // ---------------------------
+  // 🔹 2. month = "3m"
+  // ---------------------------
+  if (month === "3m") {
+    const past = new Date();
+    past.setMonth(now.getMonth() - 3);
+
+    return trades.filter((t) => {
+      const d = getDate(t);
+      return d >= past && d <= now;
+    });
+  }
+
+  // ---------------------------
+  // 🔹 3. month = "6m"
+  // ---------------------------
+  if (month === "6m") {
+    const past = new Date();
+    past.setMonth(now.getMonth() - 6);
+
+    return trades.filter((t) => {
+      const d = getDate(t);
+      return d >= past && d <= now;
+    });
+  }
+
+  // ---------------------------
+  // 🔹 4. month = "current_month"
+  // ---------------------------
+  if (month === "current_month") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    return trades.filter((t) => {
+      const d = getDate(t);
+      return d >= start && d < end;
+    });
+  }
+
+  // No filters selected
+  return trades;
+}
+
 export async function createTrade(tradeDetails) {
   try {
     const trade = await Trade.create(tradeDetails);
@@ -24,6 +87,8 @@ export async function createTrade(tradeDetails) {
 }
 
 export async function getTrades(query = {}) {
+  console.log(query);
+
   try {
     const {
       page = 0,
@@ -36,6 +101,8 @@ export async function getTrades(query = {}) {
       type,
       status,
       accountId,
+      selectedDate,
+      month,
       symbol,
       lots,
       minLots,
@@ -46,6 +113,7 @@ export async function getTrades(query = {}) {
       closeDate,
       closeDateFrom,
       closeDateTo,
+      range,
     } = query;
 
     // 🔹 Step 1: Try to get trade account + user
@@ -73,31 +141,33 @@ export async function getTrades(query = {}) {
       };
 
       try {
-        // 🧩 Step 1: Fetch ALL trades (since API pagination is buggy)
+        // Fetch ALL trades
         const allTradesResp = await axios.get(
           `https://api.tradesync.com/trades?account_id=${tradeAcc.tradesyncId}`,
           { auth: tradesyncAuth }
         );
 
-        const allTrades = allTradesResp?.data?.data || [];
+        let allTrades = allTradesResp?.data?.data || [];
+
+        // 🟢 APPLY FILTERS HERE
+        allTrades = applyTradeFilters(allTrades, { selectedDate, month });
+
         const total = allTrades.length;
 
-        // 🧩 Step 2: Manual pagination
+        // Manual pagination
         const startIndex = (pageNum - 1) * limitNum;
         const paginatedTrades = allTrades.slice(
           startIndex,
           startIndex + limitNum
         );
 
-        // 🧩 Step 3: Compute total pages
         const totalPages = Math.ceil(total / limitNum);
 
-        // 🧩 Step 4: Return same structure as before
         return {
           code: 200,
           success: true,
           message:
-            "Trades fetched from TradeSync successfully (manual pagination)",
+            "Trades fetched from TradeSync successfully (filtered + paginated)",
           sync: true,
           data: paginatedTrades,
           pagination: {
@@ -127,6 +197,67 @@ export async function getTrades(query = {}) {
     if (status) whereClause.status = status;
     if (accountId) whereClause.accountId = accountId;
     if (symbol) whereClause.symbol = symbol;
+    if (selectedDate) whereClause.openDate = selectedDate;
+    if (month) whereClause.openDate = month;
+    if (range) whereClause.openDate = range;
+
+    if (selectedDate) {
+      const start = new Date(selectedDate);
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+
+      whereClause.openDate = {
+        [Op.between]: [start, end],
+      };
+    }
+
+    /* -------------------------------------------
+   ✅ MONTH FILTER (YYYY-MM) → Full month range
+------------------------------------------- */
+    // ✅ DAY FILTER (YYYY-MM-DD)
+    if (selectedDate) {
+      const start = new Date(selectedDate);
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+
+      whereClause.openDate = {
+        [Op.between]: [start, end],
+      };
+    }
+
+    // ✅ MONTH FILTER (YYYY-MM)
+    if (month && isValidYM(month)) {
+      const [year, monthNum] = month.split("-").map(Number);
+
+      const startOfMonth = new Date(year, monthNum - 1, 1);
+      const endOfMonth = new Date(year, monthNum, 1); // first day of next month
+
+      whereClause.openDate = {
+        [Op.gte]: startOfMonth,
+        [Op.lt]: endOfMonth,
+      };
+    }
+
+    // ✅ RANGE FILTER (current, 3m, 6m)
+    if (range) {
+      const now = new Date();
+      let start = null;
+
+      if (range === "current") {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+      } else if (range === "3m") {
+        start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+      } else if (range === "6m") {
+        start = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+      }
+
+      if (start) {
+        whereClause.openDate = {
+          [Op.gte]: start,
+          [Op.lt]: now,
+        };
+      }
+    }
 
     // lots exact or range
     if (lots !== undefined && lots !== null && lots !== "") {
@@ -222,7 +353,7 @@ export async function updateTrade(body) {
 }
 
 export async function deleteTrade(id) {
-  console.log(id)
+  console.log(id);
   try {
     if (!id) {
       return {
