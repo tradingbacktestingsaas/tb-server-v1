@@ -5,6 +5,7 @@ import User from "../models/user.model.js";
 import { Op } from "sequelize";
 import axios from "axios";
 import config from "../config/env.js";
+import { tradeService } from "./tradeService.js";
 
 const tradeSyncGet = (path) =>
   axios.get(`${config.trade_sync.url.replace(/\/+$/, "")}${path}`, {
@@ -163,6 +164,19 @@ export async function getStats(tradeAccountId) {
   }
 }
 
+export async function getCharts(req) {
+  const q = req.query || req;
+  const accountId = q.accountId || q.account_id;
+  if (!accountId)
+    return {
+      message: "accountId is required",
+      success: false,
+      data: null,
+    };
+
+
+}
+
 export async function getFullAnalyses(req) {
   const q = req.query || req;
 
@@ -199,7 +213,7 @@ export async function getFullAnalyses(req) {
     return defaultLimit;
   };
 
-  // 🕒 Separate Range Handling
+  // Separate Range Handling
   const monthRange = q.monthRange || "90d"; // e.g. "3m" or "90d"
   const dailyRange = q.dailyRange || "30d";
 
@@ -222,7 +236,7 @@ export async function getFullAnalyses(req) {
     }
   };
 
-  // 📆 Compute pages & limits separately
+  // Compute pages & limits separately
   const monthlies = {
     page: readPage("monthlies", 1),
     limit: normalizeRangeToLimit(monthRange, 12), // months
@@ -233,7 +247,7 @@ export async function getFullAnalyses(req) {
     limit: normalizeRangeToLimit(dailyRange, 30), // days
   };
 
-  // 🔒 Account validation
+  // Account validation
   const tradeAcc = await TradeAccount.findByPk(accountId, {
     include: [{ model: User, as: "user" }],
   });
@@ -268,7 +282,7 @@ export async function getFullAnalyses(req) {
     process.env.TRADESYNC_API_URL || "https://api.tradesync.com/analyses";
 
   try {
-    // 🧠 Fetch monthlies & dailies separately with their own limits
+    // Fetch monthlies & dailies separately with their own limits
     const [monthliesRes, dailiesRes] = await Promise.all([
       axios.get(
         `${baseURL}/${tradeAcc.tradesyncId}/monthlies?page=${monthlies.page}&limit=${monthlies.limit}`,
@@ -318,7 +332,7 @@ export async function getFullAnalyses(req) {
   }
 }
 
-// 4️⃣ Helper to return empty stats object
+// Helper to return empty stats object
 function getEmptyStats() {
   return {
     profit_loss: 0,
@@ -431,5 +445,9 @@ export async function podium() {
     };
   }
 }
+
+const getChartsData = async (startDate, endDate) => {
+  const data = await tradeService.getTrades
+};
 
 export const analyticsService = { getStats, podium, getFullAnalyses };
