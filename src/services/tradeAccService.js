@@ -119,6 +119,7 @@ export async function createTradeAcc(accDetails) {
           broker_server: accDetails?.broker_server,
           broker_server_id: accDetails?.broker_server_id,
           userId: accDetails.userId,
+          isActive:false
         },
         { transaction: t }
       );
@@ -289,7 +290,7 @@ export async function getBrokers(req) {
 //   }
 // }
 
-export async function switchTradeAcc({ userId, tradeAccId, type }) {
+export async function switchTradeAcc({ userId, tradeAccId, type }) {  
   try {
     if (!tradeAccId) throw new Error("tradeAccId is required");
 
