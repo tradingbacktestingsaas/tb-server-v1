@@ -17,7 +17,7 @@ router.post(
       event = stripe.webhooks.constructEvent(
         req.body,
         sig,
-        config.stripe.webhookSecret
+        config.stripe.webhookSecret,
       );
     } catch (err) {
       console.error("❌ Webhook signature verification failed:", err.message);
@@ -32,7 +32,8 @@ router.post(
       console.error("⚠️ Error handling event:", err);
       res.status(500).send("Webhook handler error");
     }
-  }
+  },
 );
+
 
 export default router;

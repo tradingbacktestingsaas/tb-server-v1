@@ -46,6 +46,11 @@ const User = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    onboarding_completed: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
     avatar_url: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -77,7 +82,7 @@ const User = sequelize.define(
     timestamps: true, // enables createdAt & updatedAt
     createdAt: "createdAt",
     updatedAt: "updatedAt",
-  }
+  },
 );
 
 export default User;

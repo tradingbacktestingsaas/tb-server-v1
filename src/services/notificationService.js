@@ -186,11 +186,12 @@ export async function sendBroadcastNotification(io, notification) {
 
 export async function bulkCreateNotifications(notificationDetail) {
   try {
-    const notification = await Notification.bulkCreate(notificationDetail, {
+    const notification = await UserNotification.bulkCreate(notificationDetail, {
       validate: true,
       returning: true,
       ignoreDuplicates: true,
     });
+    
 
     if (!notification) {
       throw new Error("notification not created");

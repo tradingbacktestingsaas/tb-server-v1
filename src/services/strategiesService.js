@@ -6,6 +6,7 @@ import stripeService from "./stripeService.js";
 import { Op, Sequelize, where } from "sequelize";
 import User from "../models/user.model.js";
 import PurchasedStrategies from "../models/purchased_strategies.model.js";
+import Plan from "../models/plan.model.js";
 import { createNotification } from "./notificationService.js";
 
 export async function createStrategies(strategiesDetails) {
@@ -26,141 +27,207 @@ export async function createStrategies(strategiesDetails) {
   }
 }
 
-export async function getPurchasedStrategies(id, user_id) {
-  let where = {};
+export async function getStrategies(query = {}, authUserId = null) {
   try {
-    if (id) {
-      where.strategyId = id;
-    }
+    /* ============================================================
+       1️⃣ Safe Query Extraction
+    ============================================================ */
 
-    if (user_id) {
-      where.userId = user_id;
-    }
-
-    const strategies = await PurchasedStrategies.findAll({ where });
-    if (!strategies) {
-      return {
-        code: 201,
-        message: "Strategies not created",
-        data: [],
-        success: true,
-      };
-    }
-    return {
-      code: 201,
-      message: "Strategies created successfully",
-      data: strategies,
-      success: true,
-    };
-  } catch (error) {
-    console.error("Error in getPurchasedStrategies service:", error);
-    throw new Error(`Failed to get strategies: ${error}`);
-  }
-}
-
-export async function getStrategies(query = {}) {
-  try {
     const {
       page = 1,
       limit = 10,
       sortBy = "created_at",
       sortOrder = "DESC",
       filters = {},
-      purchaser_user_id,
     } = query;
 
-    const { id, status, type, isPremium, userId, byUserId } = filters;
+    const { id, status, type, isPremium, byUserId } = filters;
 
-    // 1️⃣ Fetch user plan if userId is provided
-    let userPlan = null;
-    if (userId) {
-      const user = await User.findByPk(userId);
-      userPlan = user?.plan || null;
-    }
-
-    // 2️⃣ Build where clause
-    const whereClause = {};
-
-    if (id) whereClause.id = id;
-    if (status) whereClause.status = status;
-
-    if (typeof isPremium !== "undefined" && isPremium !== "") {
-      whereClause.isPremium = [true, "true"].includes(
-        isPremium === true ? true : String(isPremium).toLowerCase()
-      );
-    }
-
-    if (userPlan === "ELITE") {
-      if (type === "ELITE") {
-        whereClause.type = "ELITE";
-      } else if (type) {
-        whereClause.type = type;
-      }
-    } else {
-      // Non-ELITE users
-      if (type === "PERSONAL") {
-        whereClause.type = "PERSONAL";
-        whereClause.userId = userId;
-      } else {
-        whereClause.type = { [Op.ne]: "ELITE" };
-      }
-    }
-
-    // ❗ Always hide PERSONAL strategies from other users
-    if (userId) {
-      whereClause[Op.or] = [
-        { type: { [Op.ne]: "PERSONAL" } }, // allow all non-personal strategies
-        { userId: userId }, // allow only MY personal strategies
-      ];
-    }
-
-    if (byUserId) whereClause.userId = byUserId;
-
-    // 3️⃣ Pagination & sorting
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
     const offset = (pageNum - 1) * limitNum;
 
-    const order = [
-      [sortBy, String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC"],
+    /* ============================================================
+       2️⃣ Whitelist Sorting (Prevent SQL Injection)
+    ============================================================ */
+
+    const allowedSortFields = [
+      "created_at",
+      "updated_at",
+      "price",
+      "name",
+      "type",
     ];
 
-    // 4️⃣ Fetch strategies
+    const safeSortBy = allowedSortFields.includes(sortBy)
+      ? sortBy
+      : "created_at";
+
+    const safeSortOrder =
+      String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC";
+
+    const order = [[safeSortBy, safeSortOrder]];
+
+    /* ============================================================
+       3️⃣ Fetch Auth User (Role + Plan)
+    ============================================================ */
+
+    let userRole = null;
+    let userPlan = "FREE";
+    let isAdmin = false;
+    console.log(authUserId);
+
+    if (authUserId) {
+      const user = await User.findByPk(authUserId, {
+        attributes: ["role"],
+        include: [
+          {
+            model: UserSubscription,
+            as: "subscriptions",
+            required: false,
+            where: { status: "active" },
+            include: [
+              {
+                model: Plan,
+                as: "plan",
+                attributes: ["code"],
+              },
+            ],
+          },
+        ],
+      });
+
+      userRole = user?.role || null;
+      isAdmin = userRole === "admin";
+
+      const activeSub =
+        user.subscriptions.status === "active" ? user.subscriptions : null;
+      userPlan = activeSub?.plan?.code?.toUpperCase() || "FREE";
+      console.log(user);
+    }
+    console.log(userPlan);
+
+    const isElite = userPlan === "ELITE";
+
+    /* ============================================================
+       4️⃣ Build WHERE Clause
+    ============================================================ */
+
+    const where = {};
+
+    if (id) where.id = id;
+    if (byUserId) where.userId = byUserId;
+
+    /* =============================
+       Status Control
+    ============================== */
+
+    if (isAdmin) {
+      if (status) where.status = status;
+    } else {
+      // Non-admin only sees active
+      where.status = "active";
+    }
+
+    /* =============================
+       Premium Filter
+    ============================== */
+
+    if (typeof isPremium !== "undefined") {
+      where.isPremium =
+        isPremium === true || String(isPremium).toLowerCase() === "true";
+    }
+
+    /* =============================
+       Plan-Based Type Visibility
+    ============================== */
+
+    if (!isAdmin) {
+      if (isElite) {
+        where.type = { [Op.in]: ["ELITE", "ADDON"] };
+      } else {
+        where.type = "ADDON";
+      }
+    }
+
+    /* =============================
+       Safe Type Override (No Escalation)
+    ============================== */
+
+    if (type) {
+      if (isAdmin) {
+        where.type = type;
+      } else if (isElite && ["ELITE", "ADDON"].includes(type)) {
+        where.type = type;
+      } else if (!isElite && type === "ADDON") {
+        where.type = type;
+      }
+    }
+
+    /* ============================================================
+       5️⃣ Fetch Strategies
+    ============================================================ */
+
     const { rows, count } = await Strategies.findAndCountAll({
-      where: whereClause,
+      where,
       offset,
       limit: limitNum,
       order,
     });
 
-    // 5️⃣ Fetch purchased strategy IDs if purchaser_user_id provided
-    let purchasedStrategyIds = new Set();
-    if (purchaser_user_id) {
-      const userOrders = await Order.findAll({
+    /* ============================================================
+       6️⃣ Purchase Detection (Optimized)
+    ============================================================ */
+
+    let purchasedSet = new Set();
+
+    if (authUserId && rows.length > 0) {
+      const purchases = await PurchasedStrategies.findAll({
         attributes: ["strategyId"],
         where: {
-          userId: purchaser_user_id,
-          orderType: "strategy",
-          status: "paid",
+          userId: authUserId,
         },
+        include: [
+          {
+            model: Strategies,
+            as: "strategiesInfo",
+            attributes: [
+              "id",
+              "title",
+              "comment",
+              "status",
+              "type",
+              "isPremium",
+              "hasPrice",
+              "price",
+              "currency",
+            ],
+          },
+        ],
       });
-      purchasedStrategyIds = new Set(
-        userOrders.map((o) => o.strategyId).filter(Boolean)
-      );
+
+      purchasedSet = new Set(purchases.map((p) => p.strategyId));
     }
 
-    // 6️⃣ Mark purchased strategies
-    const dataWithPurchase = rows.map((s) => {
-      const json = s.toJSON();
-      json.is_purchase = purchasedStrategyIds.has(json.id);
+    /* ============================================================
+       7️⃣ Attach Purchase Flag
+    ============================================================ */
+
+    const data = rows.map((strategy) => {
+      const json = strategy.toJSON();
+      json.isPurchased = purchasedSet.has(json.id);
       return json;
     });
 
+    /* ============================================================
+       8️⃣ Response
+    ============================================================ */
+
     return {
       code: 200,
-      message: "Strategies fetched successfully",
       success: true,
-      data: dataWithPurchase,
+      message: "Strategies fetched successfully",
+      data,
       pagination: {
         total: count,
         page: pageNum,
@@ -169,10 +236,293 @@ export async function getStrategies(query = {}) {
       },
     };
   } catch (error) {
-    console.error("Error in getStrategies service:", error);
+    console.error("Error in getStrategies:", error);
     throw new Error(`Failed to fetch strategies: ${error.message || error}`);
   }
 }
+
+export async function getPurchasedStrategies(query = {}, authUserId = null) {
+  try {
+    /* ============================================================
+       1️⃣ Safe Query Extraction + Sanitization
+    ============================================================ */
+
+    const {
+      page = 1,
+      limit = 10,
+      sortBy = "created_at",
+      sortOrder = "DESC",
+      filters = {},
+    } = query;
+
+    const { userId, strategyId, type, isPremium } = filters;
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
+    const offset = (pageNum - 1) * limitNum;
+
+    /* ============================================================
+       2️⃣ Whitelist Sort Columns (Prevent SQL Injection)
+    ============================================================ */
+
+    const allowedSortFields = [
+      "created_at",
+      "updated_at",
+      "strategy.price",
+      "strategy.type",
+      "strategy.title",
+    ];
+
+    const safeSortBy = allowedSortFields.includes(sortBy)
+      ? sortBy
+      : "created_at";
+
+    const safeSortOrder =
+      String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC";
+
+    const order = [[safeSortBy, safeSortOrder]];
+
+    /* ============================================================
+       3️⃣ Build WHERE Clause Safely
+    ============================================================ */
+
+    const where = {};
+
+    // If userId filter provided, use it; otherwise use authUserId if available
+    const filterUserId = userId || authUserId;
+    if (filterUserId) {
+      where.userId = filterUserId;
+    }
+
+    if (strategyId) where.strategyId = strategyId;
+
+    /* ============================================================
+       4️⃣ Build Include Clause with Strategy Details
+    ============================================================ */
+
+    const strategyWhere = {};
+
+    if (typeof isPremium !== "undefined") {
+      strategyWhere.isPremium =
+        isPremium === true || String(isPremium).toLowerCase() === "true";
+    }
+
+    if (type) {
+      strategyWhere.type = type;
+    }
+
+    const include = [
+      {
+        model: Strategies,
+        as: "strategiesInfo",
+        attributes: [
+          "id",
+          "title",
+          "comment",
+          "status",
+          "type",
+          "isPremium",
+          "hasPrice",
+          "price",
+          "currency",
+          "created_at",
+          "updated_at",
+        ],
+        where:
+          Object.keys(strategyWhere).length > 0 ? strategyWhere : undefined,
+        required: Object.keys(strategyWhere).length > 0,
+      },
+    ];
+
+    /* ============================================================
+       5️⃣ Fetch Purchased Strategies with Includes
+    ============================================================ */
+
+    const { rows, count } = await PurchasedStrategies.findAndCountAll({
+      where,
+      include,
+      offset,
+      limit: limitNum,
+      order,
+      distinct: true, // For accurate count with includes
+      subQuery: false,
+    });
+
+    /* ============================================================
+       6️⃣ Response
+    ============================================================ */
+
+    return {
+      code: 200,
+      success: true,
+      message: "Purchased strategies fetched successfully",
+      data: rows,
+      pagination: {
+        total: count,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(count / limitNum) || 1,
+      },
+    };
+  } catch (error) {
+    console.error("Error in getPurchasedStrategies:", error);
+    throw new Error(`Failed to fetch purchased strategies: ${error.message}`);
+  }
+}
+
+export async function getUserPurchasedStrategies(userId) {
+  try {
+    const strategies = await PurchasedStrategies.findAll({
+      where: { userId },
+      include: [
+        {
+          model: Strategies,
+          as: "strategiesInfo",
+          attributes: [
+            "id",
+            "title",
+            "comment",
+            "status",
+            "type",
+            "isPremium",
+            "hasPrice",
+            "price",
+            "currency",
+          ],
+        },
+      ],
+      order: [["created_at", "DESC"]],
+    });
+
+    return {
+      code: 200,
+      success: true,
+      message: "User purchased strategies fetched successfully",
+      data: strategies,
+    };
+  } catch (error) {
+    console.error("Error in getUserPurchasedStrategies:", error);
+    throw new Error(
+      `Failed to fetch user purchased strategies: ${error.message}`,
+    );
+  }
+}
+
+// export async function getStrategies(query = {}) {
+//   try {
+//     const {
+//       page = 1,
+//       limit = 10,
+//       sortBy = "created_at",
+//       sortOrder = "DESC",
+//       filters = {},
+//       purchaser_user_id,
+//     } = query;
+
+//     const { id, status, type, isPremium, userId, byUserId } = filters;
+
+//     // 1️⃣ Fetch user plan if userId is provided
+//     let userPlan = null;
+//     if (userId) {
+//       const user = await User.findByPk(userId);
+//       userPlan = user?.plan || null;
+//     }
+
+//     // 2️⃣ Build where clause
+//     const whereClause = {};
+
+//     if (id) whereClause.id = id;
+//     if (status) whereClause.status = status;
+
+//     if (typeof isPremium !== "undefined" && isPremium !== "") {
+//       whereClause.isPremium = [true, "true"].includes(
+//         isPremium === true ? true : String(isPremium).toLowerCase()
+//       );
+//     }
+
+//     if (userPlan === "ELITE") {
+//       if (type === "ELITE") {
+//         whereClause.type = "ELITE";
+//       } else if (type) {
+//         whereClause.type = type;
+//       }
+//     } else {
+//       // Non-ELITE users
+//       if (type === "PERSONAL") {
+//         whereClause.type = "PERSONAL";
+//         whereClause.userId = userId;
+//       } else {
+//         whereClause.type = { [Op.ne]: "ELITE" };
+//       }
+//     }
+
+//     // ❗ Always hide PERSONAL strategies from other users
+//     if (userId) {
+//       whereClause[Op.or] = [
+//         { type: { [Op.ne]: "PERSONAL" } }, // allow all non-personal strategies
+//         { userId: userId }, // allow only MY personal strategies
+//       ];
+//     }
+
+//     if (byUserId) whereClause.userId = byUserId;
+
+//     // 3️⃣ Pagination & sorting
+//     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+//     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
+//     const offset = (pageNum - 1) * limitNum;
+
+//     const order = [
+//       [sortBy, String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC"],
+//     ];
+
+//     // 4️⃣ Fetch strategies
+//     const { rows, count } = await Strategies.findAndCountAll({
+//       where: whereClause,
+//       offset,
+//       limit: limitNum,
+//       order,
+//     });
+
+//     // 5️⃣ Fetch purchased strategy IDs if purchaser_user_id provided
+//     let purchasedStrategyIds = new Set();
+//     if (purchaser_user_id) {
+//       const userOrders = await Order.findAll({
+//         attributes: ["strategyId"],
+//         where: {
+//           userId: purchaser_user_id,
+//           orderType: "strategy",
+//           status: "paid",
+//         },
+//       });
+//       purchasedStrategyIds = new Set(
+//         userOrders.map((o) => o.strategyId).filter(Boolean)
+//       );
+//     }
+
+//     // 6️⃣ Mark purchased strategies
+//     const dataWithPurchase = rows.map((s) => {
+//       const json = s.toJSON();
+//       json.is_purchase = purchasedStrategyIds.has(json.id);
+//       return json;
+//     });
+
+//     return {
+//       code: 200,
+//       message: "Strategies fetched successfully",
+//       success: true,
+//       data: dataWithPurchase,
+//       pagination: {
+//         total: count,
+//         page: pageNum,
+//         limit: limitNum,
+//         totalPages: Math.ceil(count / limitNum) || 1,
+//       },
+//     };
+//   } catch (error) {
+//     console.error("Error in getStrategies service:", error);
+//     throw new Error(`Failed to fetch strategies: ${error.message || error}`);
+//   }
+// }
 
 export async function updateStrategies(body) {
   try {
@@ -280,12 +630,12 @@ export async function buyStrategy(body) {
     // Ensure a Stripe customer exists and the payment method is associated
     const customer = await stripeService.getOrCreateCustomerByEmail(
       user.email,
-      [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined
+      [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined,
     );
     try {
       await stripeService.attachPaymentMethodToCustomer(
         paymentMethodId,
-        customer.id
+        customer.id,
       );
     } catch (e) {
       // Ignore if it's already attached to this customer

@@ -33,8 +33,7 @@ const fullAnalytics = async (req, res) => {
 const leaderBoard = async (req, res) => {
   try {
     const stats = await analyticsService.podium();
-
-    return res.status(201).json({ analytics: stats.data });
+    return res.status(201).json(stats);
   } catch (error) {
     return res.status(400).json({
       code: 400,

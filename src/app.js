@@ -24,8 +24,11 @@ import plansRoutes from "./routes/planRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoute.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import ordersRoutes from "./routes/ordersRoutes.js";
-import webhookRoute from "./routes/stripeWebhook.js";
+import webhookRoute from "./routes/webhookRoute.js";
 import couponRoutes from "./routes/couponRoutes.js";
+import DashboardRoutes from "./routes/dashboardRoute.js";
+import tradeSyncRoutes from "./routes/tradeSyncWebhook.js";
+import userPersonalStrategyRoutes from "./routes/userPersonalStrategyRoutes.js";
 
 import {
   startSubscriptionCron,
@@ -59,18 +62,21 @@ const corsOptions = {
     "x-recaptcha-token",
   ],
 };
-app.use("/webhook", (req, res, next) => {
-  if (req.originalUrl.startsWith("/webhook")) {
-    next(); // skip global parsers
-  } else {
-    express.json()(req, res, next);
-  }
-});
-
-app.use(`/webhook`, webhookRoute);
+// app.use("/webhook", (req, res, next) => {
+//   if (req.originalUrl.startsWith("/webhook")) {
+//     next(); // skip global parsers
+//   } else {
+//     express.json()(req, res, next);
+//   }
+// });
+// Webhooks must come BEFORE global body parsers
+// app.use("/webhook", webhookRoute);
+app.use(express.json());
+app.use("/webhook", tradeSyncRoutes);
+// app.use(`/webhook`, webhookRoute);
+// Global middlewares
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
-app.use(express.json());
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
@@ -97,6 +103,8 @@ app.use(`${globalPrefix}/subscription`, subscriptionRoutes);
 app.use(`${globalPrefix}/analytics`, analyticsRoutes);
 app.use(`${globalPrefix}/orders`, ordersRoutes);
 app.use(`${globalPrefix}/coupons`, couponRoutes);
+app.use(`${globalPrefix}/dashboard`, DashboardRoutes);
+app.use(`${globalPrefix}/user-strategy`, userPersonalStrategyRoutes);
 
 startSubscriptionCron();
 reminderSubscriptionCron();

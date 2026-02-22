@@ -10,12 +10,15 @@ import {
 } from "../utils/jwt.js";
 import { sendPasswordResetEmail } from "../utils/email.js";
 import config from "../config/env.js";
+import TradeAccount from "../models/trade_account.model.js";
+import UserSubscription from "../models/user_subscription.model.js";
+import Plan from "../models/plan.model.js";
 
 var googleClient = new OAuth2Client(config.google.clientId);
 
 export async function register(userDetail) {
   const existing = await User.findOne({ where: { email: userDetail.email } });
-  if (existing) throw createError(409, "Email already registered");
+  if (existing) throw createError(409, "already-exists");
   const passwordHash = await hashPassword(userDetail.password);
   const email = userDetail.email.toLowerCase();
   const type = userDetail.type;
@@ -37,9 +40,16 @@ export async function register(userDetail) {
       avatar_url: user.avatar_url,
       type: user.type,
     },
-    "1h"
+    "1h",
   );
-  return { user: user, token, redirect: "/auth/signin" };
+  return {
+    code: 201,
+    success: true,
+    message: "user-create",
+    user: user,
+    token,
+    redirect: "/auth/signin",
+  };
 }
 
 export async function login({ email, password }) {
@@ -60,10 +70,23 @@ export async function login({ email, password }) {
       "role",
       "plan",
     ],
+    include: [
+      {
+        model: TradeAccount,
+        as: "tradeAccounts",
+        where: { isActive: true },
+        required: false,
+      },
+      {
+        model: UserSubscription,
+        as: "subscriptions",
+        include: [{ model: Plan, as: "plan", attributes: ["code"] }],
+      },
+    ],
   });
-  if (!user) throw createError(401, "Invalid credentials");
+  if (!user) throw createError(401, "not-found");
   const match = await comparePassword(password, user.password);
-  if (!match) throw createError(401, "Invalid credentials");
+  if (!match) throw createError(401, "invalid-password");
   const token = generateToken(
     {
       sub: user.id,
@@ -73,7 +96,7 @@ export async function login({ email, password }) {
       blocked: user.blocked,
       type: "user",
     },
-    "1h"
+    "1h",
   );
 
   const SignedInUser = {
@@ -85,17 +108,27 @@ export async function login({ email, password }) {
     plan: user.plan,
     blocked: user.blocked,
     avatar_url: user.avatar_url,
-    activeTradeAccountId: user.activeTradeAccountId,
+    tradeAccounts: user.tradeAccounts,
+    subscriptions: user.subscriptions,
   };
 
+  if (user) {
+    if (user.role === "admin") {
+      redirect = `/dashboard/a/${user.id}`;
+    } else {
+      redirect = `/dashboard/u/${user.id}`;
+    }
+  }
   //if user has subscription then redirect to dashboard
   //if user doesn't have subscription then redirect to subscription page
-  redirect = "/dashboard";
 
   return {
     user: SignedInUser,
     token,
+    code: 200,
     redirect,
+    success: true,
+    message: "signin-success",
   };
 }
 
@@ -116,7 +149,7 @@ export async function googleLogin({ credential }) {
   if (!ticket)
     return {
       success: false,
-      message: "Google Sign-In failed",
+      message: "google-signin-failed",
       data: null,
     };
 
@@ -126,7 +159,7 @@ export async function googleLogin({ credential }) {
   const user = await User.findOne({
     where: { email: email },
     attributes: [
-      "id",
+    "id",
       "firstName",
       "lastName",
       "email",
@@ -149,13 +182,14 @@ export async function googleLogin({ credential }) {
         blocked: user.blocked,
         type: "user",
       },
-      "1h"
+      "1h",
     );
     return {
       success: true,
-      message: "Google Sign-In successful",
+      message: "google-signin-successful",
       data: user,
       token,
+      code: 200,
     };
   }
 
@@ -176,20 +210,21 @@ export async function googleLogin({ credential }) {
       blocked: newUser.blocked,
       type: "user",
     },
-    "1h"
+    "1h",
   );
 
   return {
     success: true,
-    message: "Google Sign-In successful",
+    message: "google-signin-successful",
     data: newUser,
-    token: token,
+    token,
+    code: 200,
   };
 }
 
 export async function forgotPassword(email) {
   const user = await User.findOne({ where: { email: email } });
-  if (!user) throw createError(400, "Invalid request");
+  if (!user) throw createError(400, "not-found");
   const { token, success, message } = await createPasswordResetToken(email);
   if (!token) throw createError(400, "Invalid request");
   return {
@@ -220,7 +255,7 @@ export async function createPasswordResetToken(email) {
   return {
     token,
     success: true,
-    message: "Email sent successfully",
+    message: "sent-successfully",
   };
 }
 
@@ -278,7 +313,7 @@ export async function adminRegister({
       role: admin.role,
       type: "admin",
     },
-    "24h"
+    "24h",
   );
 
   return {
@@ -313,7 +348,7 @@ export async function adminLogin({ email, password }) {
       role: admin.role,
       type: "admin",
     },
-    "24h"
+    "24h",
   );
 
   return {

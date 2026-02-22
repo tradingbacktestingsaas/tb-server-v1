@@ -7,6 +7,8 @@ import axios from "axios";
 import config from "../config/env.js";
 import { auth } from "google-auth-library";
 import TradeAccount from "../models/trade_account.model.js";
+import Plan from "../models/plan.model.js";
+import UserSubscription from "../models/user_subscription.model.js";
 
 const SYNC_LIMITS = {
   FREE: 0,
@@ -23,7 +25,7 @@ const tradeSyncGet = (path) =>
   });
 const isUuid = (v) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    v
+    v,
   );
 const isNumeric = (v) => /^[0-9]+$/.test(v);
 
@@ -78,7 +80,7 @@ export async function createTradeAcc(accDetails) {
 
       if (tradeAcc.count >= limit) {
         throw new Error(
-          `${plan.toUpperCase()} account limit reached for your plan (${plan}). Max allowed: ${limit}.`
+          `${plan.toUpperCase()} account limit reached for your plan (${plan}). Max allowed: ${limit}.`,
         );
       }
     }
@@ -88,7 +90,7 @@ export async function createTradeAcc(accDetails) {
       {
         account_name: `${user.firstName.slice(0, 10)} ${user.lastName.slice(
           0,
-          10
+          10,
         )}`,
         account_number: accDetails?.account_no ?? null,
         password: accDetails?.investor_password ?? null,
@@ -101,7 +103,7 @@ export async function createTradeAcc(accDetails) {
           username: config.trade_sync.key,
           password: config.trade_sync.secret,
         },
-      }
+      },
     );
 
     if (!syncAccount) {
@@ -119,9 +121,10 @@ export async function createTradeAcc(accDetails) {
           broker_server: accDetails?.broker_server,
           broker_server_id: accDetails?.broker_server_id,
           userId: accDetails.userId,
-          isActive:false
+          token: syncAccount.data?.data?.status,
+          isActive: false,
         },
-        { transaction: t }
+        { transaction: t },
       );
     } else {
       return {
@@ -143,7 +146,7 @@ export async function createTradeAcc(accDetails) {
     await t.rollback();
     console.error("Error in createTradeAcc:", error);
     throw new Error(
-      `Failed to create trade account: ${error.message || error}`
+      `Failed to create trade account: ${error.message || error}`,
     );
   }
 }
@@ -156,7 +159,7 @@ export async function getAccountStatus(tradesyncId) {
         username: config.trade_sync.key,
         password: config.trade_sync.secret,
       },
-    }
+    },
   );
   return res.data?.data;
 }
@@ -165,6 +168,7 @@ export async function getBrokers(req) {
   try {
     // 🧩 Extract query params
     const { application = "", limit = 25, page = 1, search } = req.query;
+    console.log(req.query);
 
     // 🧮 Normalize pagination values
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
@@ -181,7 +185,7 @@ export async function getBrokers(req) {
       `${config.trade_sync.url}/broker-servers?application=${
         application.toLowerCase() || ""
       }`,
-      { auth }
+      { auth },
     );
 
     const allBrokers = res.data?.data || [];
@@ -189,7 +193,7 @@ export async function getBrokers(req) {
     // 🧩 Step 2: Optional search filter
     const filtered = search
       ? allBrokers.filter((b) =>
-          b.name.toLowerCase().includes(search.toLowerCase())
+          b.name.toLowerCase().includes(search.toLowerCase()),
         )
       : allBrokers;
 
@@ -214,7 +218,7 @@ export async function getBrokers(req) {
   } catch (error) {
     console.error(
       "❌ Failed to fetch brokers:",
-      error.response?.data || error.message
+      error.response?.data || error.message,
     );
 
     return {
@@ -290,7 +294,7 @@ export async function getBrokers(req) {
 //   }
 // }
 
-export async function switchTradeAcc({ userId, tradeAccId, type }) {  
+export async function switchTradeAcc({ userId, tradeAccId, type }) {
   try {
     if (!tradeAccId) throw new Error("tradeAccId is required");
 
@@ -322,7 +326,7 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
             userId: user.id,
             type: { [Op.in]: ["MT4", "MT5"] },
           },
-        }
+        },
       );
 
       // activate the selected one
@@ -338,9 +342,12 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
     // ============ MT4 / MT5 ACCOUNT HANDLING ============
     if (type === "MT4" || type === "MT5") {
       if (user.plan === "FREE") {
-        throw new Error(
-          "Your current plan does not allow SYNC accounts. Please upgrade."
-        );
+        return {
+          message:
+            "Your current plan does not allow SYNC accounts. Please upgrade.",
+          success: true,
+          data: null,
+        };
       }
 
       // Try remote fetch
@@ -353,7 +360,7 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
               username: config.trade_sync.key,
               password: config.trade_sync.secret,
             },
-          }
+          },
         );
         syncedAccount = resp?.data?.data || null;
       } catch {
@@ -367,13 +374,17 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
 
         const accounts = listResp?.data?.data || [];
         syncedAccount = accounts.find(
-          (acc) => String(acc.id) === String(tradeAcc.tradesyncId)
+          (acc) => String(acc.id) === String(tradeAcc.tradesyncId),
         );
       }
 
       if (!syncedAccount)
-        throw new Error("Trade account not found in sync service");
-
+        return {
+          message:
+            "Trade account not found in sync service, please try again later",
+          success: true,
+          data: null,
+        };
       // deactivate all accounts
       await TradeAccount.update(
         { isActive: false },
@@ -382,7 +393,7 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
             userId: user.id,
             type: { [Op.in]: ["MT4", "MT5", "FREE"] },
           },
-        }
+        },
       );
 
       // activate selected account
@@ -435,7 +446,7 @@ export async function createFreeTradeAcc(userId) {
     { isActive: false },
     {
       where: { userId, type: { [Op.in]: ["MT4", "MT5"] } },
-    }
+    },
   );
 
   const userData = {
@@ -500,15 +511,54 @@ export async function getTradeAccs(options = {}) {
       offset = 0,
     } = options;
 
-    const where = {};
+    if (!userId) {
+      throw new Error("userId is required");
+    }
 
-    const user = await User.findByPk(userId);
+    /* ============================= */
+    /* FETCH USER + PLAN */
+    /* ============================= */
+
+    const user = await User.findByPk(userId, {
+      attributes: ["id", "firstName", "lastName", "email", "role"],
+      include: [
+        {
+          model: UserSubscription,
+          as: "subscriptions",
+          include: [
+            {
+              model: Plan,
+              as: "plan",
+              attributes: ["code", "features"],
+            },
+          ],
+        },
+      ],
+    });
 
     if (!user) {
       throw new Error("User not found");
     }
 
-    // Filters
+    const activeSub =
+      user.subscriptions.status === "active" ? user.subscriptions : null;
+    const plan = activeSub?.plan || null;
+
+    const planName = plan?.code?.toUpperCase() || "FREE";
+
+    const accountLimit =
+      typeof plan?.features === "object"
+        ? (plan.features?.account_limit ?? 0)
+        : 0;
+
+    /* ============================= */
+    /* BUILD WHERE FILTER */
+    /* ============================= */
+
+    const where = {
+      userId: user.id,
+    };
+
     if (account_no) {
       where.account_no = { [Op.iLike]: `%${account_no}%` };
     }
@@ -518,27 +568,29 @@ export async function getTradeAccs(options = {}) {
     }
 
     if (typeof active === "boolean") {
-      where.active = active;
+      where.isActive = active;
     }
 
-    if (userId) {
-      where.userId = user.id;
-    }
-
-    // FREE plan → only local FREE accounts
-    if (user.plan === "FREE") {
+    // FREE plan → restrict to FREE type
+    if (planName === "FREE") {
       where.type = "FREE";
     }
 
-    // Fetch LOCAL accounts (MT4 + MT5 stored in DB)
-    const { count, rows: localTradeAccs } = await TradeAcc.findAndCountAll({
+    /* ============================= */
+    /* FETCH LOCAL ACCOUNTS */
+    /* ============================= */
+
+    const { count, rows } = await TradeAcc.findAndCountAll({
       attributes: [
         "id",
         "account_no",
         "broker_server",
         "broker_server_id",
         "type",
+        "token",
+        "isActive",
         "tradesyncId",
+        "createdAt",
       ],
       where,
       limit,
@@ -546,82 +598,83 @@ export async function getTradeAccs(options = {}) {
       order: [["createdAt", "DESC"]],
     });
 
-    // Remote array holder
+    const localTradeAccs = rows.map((row) => row.get({ plain: true }));
+
+    /* ============================= */
+    /* FETCH REMOTE ACCOUNTS (IF PLAN ALLOWS) */
+    /* ============================= */
+
     let remoteTradeAccs = [];
 
-    // -------------- TRADE SYNC LOGIC --------------
-    if (["STANDARD", "ELITE"].includes(user.plan)) {
-      try {
-        // 1️⃣ Extract tradesyncIds from local accounts
-        const tradesyncIds = localTradeAccs
-          .filter((acc) => acc.tradesyncId)
-          .map((acc) => acc.tradesyncId);
+    if (["STANDARD", "ELITE"].includes(planName)) {
+      const tradesyncIds = localTradeAccs
+        .filter((acc) => acc.tradesyncId)
+        .map((acc) => acc.tradesyncId);
 
-        // 2️⃣ Request remote account details for each
+      if (tradesyncIds.length > 0) {
         const remoteResponses = await Promise.all(
           tradesyncIds.map(async (id) => {
             try {
               const res = await tradeSyncGet(`/accounts/${id}`);
-              return res.data?.data || res.data;
+              return res?.data?.data || res?.data || null;
             } catch (err) {
-              console.warn(
-                `Failed to fetch remote account ${id}:`,
-                err.message
-              );
+              console.warn(`TradeSync fetch failed for ${id}:`, err.message);
               return null;
             }
-          })
+          }),
         );
 
-        // 3️⃣ Filter out failed/null responses
-        const remoteData = remoteResponses.filter(Boolean);
-
-        // 4️⃣ Normalize remote accounts
-        remoteTradeAccs = remoteData.map((acc) => ({
-          remoteId: acc.id, // keep remote id separate
+        remoteTradeAccs = remoteResponses.filter(Boolean).map((acc) => ({
+          tradesyncId: acc.id,
           account_no: acc.account_number,
           broker_server: acc.server,
-          type: (acc.application || acc.type || "REMOTE").toUpperCase(), // UPPERCASE
+          type: (acc.application || acc.type || "REMOTE").toUpperCase(),
           application: (acc.application || "").toUpperCase(),
-          tradesyncId: acc.id,
           investor_password: acc.password,
           remote: true,
           status: acc.status || "UNKNOWN",
         }));
-      } catch (err) {
-        console.warn("TradeSync bulk fetch failed:", err.message);
       }
     }
-    // -------------- END TRADE SYNC LOGIC --------------
 
-    // -------------- MERGE REMOTE VALUES INTO LOCAL RECORDS --------------
+    /* ============================= */
+    /* MERGE LOCAL + REMOTE */
+    /* ============================= */
+
     const tradeAccs = localTradeAccs.map((local) => {
       const remote = remoteTradeAccs.find(
-        (r) => Number(r.tradesyncId) === Number(local.tradesyncId)
+        (r) => Number(r.tradesyncId) === Number(local.tradesyncId),
       );
 
       if (!remote) return local;
 
       return {
-        ...local.dataValues, // keep local id
-        ...remote, // add remote values
-        id: local.id, // FORCE id to remain local DB ID
+        ...local,
+        ...remote,
+        id: local.id, // preserve DB id
         broker_server: local.broker_server,
         broker_server_id: local.broker_server_id,
-        tradesyncId: remote.tradesyncId,
       };
     });
 
+    /* ============================= */
+    /* RETURN CLEAN RESPONSE */
+    /* ============================= */
+
     return {
-      tradeAccs,
-      totalCount: tradeAccs.length,
       success: true,
       message: "Trade accounts fetched successfully",
+      tradeAccs,
+      totalCount: count, // correct pagination count
+      accountLimit,
+      currentPlan: planName,
+      remainingSlots: Math.max(0, accountLimit - count),
     };
   } catch (error) {
     console.error("Error in getTradeAccs:", error);
+
     throw new Error(
-      `Failed to fetch trade accounts: ${error.message || error}`
+      `Failed to fetch trade accounts: ${error.message || error}`,
     );
   }
 }
@@ -692,7 +745,7 @@ export async function getTradeAccById(accountId, userId) {
   } catch (err) {
     console.error("getTradeAccById error:", err);
     throw new Error(
-      `Failed to fetch trade account: ${err?.message ?? String(err)}`
+      `Failed to fetch trade account: ${err?.message ?? String(err)}`,
     );
   }
 }
@@ -787,7 +840,7 @@ export async function deleteTradeAcc(accId) {
       } catch (apiError) {
         console.error(
           "❌ TradeSync API delete error:",
-          apiError.response?.data || apiError.message
+          apiError.response?.data || apiError.message,
         );
       }
     }
@@ -804,22 +857,22 @@ export async function deleteTradeAcc(accId) {
     if (remainingAccounts.length > 0) {
       // Prefer MT4 or MT5 account
       const mtAccount = remainingAccounts.find((acc) =>
-        ["MT4", "MT5"].includes(acc.type)
+        ["MT4", "MT5"].includes(acc.type),
       );
 
       if (mtAccount) {
         await TradeAcc.update(
           { isActive: true },
-          { where: { id: mtAccount.id } }
+          { where: { id: mtAccount.id } },
         );
       } else {
         // Fallback: choose FREE account if no MT accounts exist
         const freeAccount = remainingAccounts.find(
-          (acc) => acc.type === "FREE"
+          (acc) => acc.type === "FREE",
         );
         await TradeAcc.update(
           { isActive: true },
-          { where: { id: freeAccount.id } }
+          { where: { id: freeAccount.id } },
         );
       }
     } else {
@@ -838,20 +891,6 @@ export async function deleteTradeAcc(accId) {
         currentAccount: currentAcc,
         deletedAccount: {
           id: tradeAcc.id,
-        },
-        updatedUser: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          id: user.id,
-          activeTradeAccountId: user.activeTradeAccountId,
-          email: user.email,
-          role: user.role,
-          plan: user.plan,
-          blocked: user.blocked,
-          type: user.type,
-          createdAt: user.createdAt,
-          updatedAt: user.updatedAt,
-          avatar_url: user.avatar_url,
         },
       },
     };
@@ -923,7 +962,7 @@ export async function updateTradeAcc(accId, accDetails) {
         } catch (apiError) {
           console.error(
             "❌ TradeSync API error:",
-            apiError.response?.data || apiError.message
+            apiError.response?.data || apiError.message,
           );
         }
       }

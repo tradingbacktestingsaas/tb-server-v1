@@ -3,7 +3,7 @@ import { notificationService } from "../services/notificationService.js";
 const getNotificationsById = async (req, res) => {
   try {
     const notification = await notificationService.getUserNotificationsById(
-      req.query
+      req.query,
     );
     return res.status(201).json(notification);
   } catch (error) {
@@ -33,7 +33,7 @@ const createNotification = async (req, res) => {
 const bulkCreateNotifications = async (req, res) => {
   try {
     const notification = await notificationService.bulkCreateNotifications(
-      req.body
+      req.body,
     );
     return res.status(201).json(notification);
   } catch (error) {
@@ -50,7 +50,7 @@ const bulkDeleteNotifications = async (req, res) => {
   try {
     const notification = await notificationService.bulkDeleteNotifications(
       req.body.ids,
-      req.body.userId
+      req.body.userId,
     );
     return res.status(201).json(notification);
   } catch (error) {
@@ -66,7 +66,7 @@ const bulkDeleteNotifications = async (req, res) => {
 const deleteAllNotifications = async (req, res) => {
   try {
     const notification = await notificationService.deleteAllNotifications(
-      req.body.userId
+      req.body.userId,
     );
     return res.status(201).json(notification);
   } catch (error) {
@@ -82,7 +82,7 @@ const deleteAllNotifications = async (req, res) => {
 const deleteNotificationById = async (req, res) => {
   try {
     const notification = await notificationService.deleteNotificationById(
-      req.params.id
+      req.params.id,
     );
     return res.status(201).json(notification);
   } catch (error) {
@@ -98,7 +98,7 @@ const deleteNotificationById = async (req, res) => {
 const markAsReadNotification = async (req, res) => {
   try {
     const notification = await notificationService.markAsReadNotification(
-      req.params.id
+      req.params.id,
     );
     return res.status(201).json(notification);
   } catch (error) {
@@ -114,7 +114,7 @@ const markAsReadNotification = async (req, res) => {
 const markAllAsReadNotification = async (req, res) => {
   try {
     const notification = await notificationService.markAllAsReadNotification(
-      req.params.id
+      req.params.id,
     );
     return res.status(201).json(notification);
   } catch (error) {

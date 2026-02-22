@@ -1,13 +1,17 @@
 import { DataTypes } from "sequelize";
 import { sequelize } from "../config/db.js";
 
-const Strategy = sequelize.define(
-  "strategies",
+const UserPersonalStrategy = sequelize.define(
+  "user_personal_strategies",
   {
     id: {
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
+    },
+    user_id: {
+      type: DataTypes.UUID,
+      allowNull: false,
     },
     title: {
       type: DataTypes.STRING(255),
@@ -25,43 +29,17 @@ const Strategy = sequelize.define(
       type: DataTypes.STRING, // example enum values "scalping", "swing", "day", "longterm"
       allowNull: false,
     },
-    cover_url: {
-      type: DataTypes.STRING, // cover image
-      allowNull: true,
-    },
-    cover_id: {
-      type: DataTypes.STRING, // cover image
-      allowNull: true,
-    },
     isPremium: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
-    hasPrice: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-    },
-    price: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: true,
-    },
-    currency: {
-      type: DataTypes.STRING(10),
-      allowNull: true,
-      defaultValue: "USD",
-    },
-    userId: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      field: "userld",
-    },
   },
   {
-    tableName: "strategies",
+    tableName: "user_personal_strategies",
     timestamps: true, // adds createdAt and updatedAt
     createdAt: "created_at",
     updatedAt: "updated_at",
   },
 );
 
-export default Strategy;
+export default UserPersonalStrategy;

@@ -3,20 +3,13 @@ import { authService } from "../services/authService.js";
 
 const register = async (req, res) => {
   try {
-    const { user, redirect } = await authService.register(req.body);
-    return res.status(201).json({
-      code: 201,
-      success: true,
-      redirect: redirect,
-      message: "User registered successfully",
-      data: user,
-    });
+    const response = await authService.register(req.body);
+    return res.status(response.code).json(response);
   } catch (error) {
-    return res.status(400).json({
-      code: 400,
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
       success: false,
-      message: error.message,
-      redirect: null,
+      message: error?.message || "Internal server error",
       data: null,
     });
   }
@@ -25,66 +18,42 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   try {
     const response = await authService.login(req.body);
-    const isProd = process.env.NODE_ENV === "production";
-    res.cookie("accessToken", response.token, {
-      httpOnly: true,
-      // In dev: DO NOT set domain. In prod: set your parent domain for subdomains.
-      domain: isProd ? "tradingbacktesting.com" : "localhost",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
 
-      // Cookie site policy:
-      // - If using same-origin dev (Next proxy to API): Lax is fine over HTTP
-      // - If cross-site (different ports) OR you want cross-subdomain in prod: use None + Secure
-      sameSite: isProd ? "none" : "lax",
-      secure: isProd, // must be true when sameSite === 'none'
-    });
+    if (response.token) {
+      const isProd = process.env.NODE_ENV === "production";
 
-    return res.status(200).json({
-      code: 200,
-      success: true,
-      message: "Signin successful",
-      data: response?.user,
-      redirect: response?.redirect,
-    });
+      res.cookie("accessToken", response.token, {
+        httpOnly: true,
+        domain: isProd ? ".tradingbacktesting.com" : undefined,
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        sameSite: isProd ? "none" : "lax",
+        secure: isProd,
+      });
+    }
+
+    return res.status(response.code).json(response);
   } catch (error) {
-    return res.status(400).json({
-      code: 400,
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
       success: false,
-      message: error.message,
-      jwt: null,
+      message: error?.message || "Internal server error",
       data: null,
-      redirect: null,
     });
   }
 };
 
 const logout = async (req, res) => {
   try {
-    res.cookie("accessToken", null, {
-      httpOnly: true,
-      // In dev: DO NOT set domain. In prod: set your parent domain for subdomains.
-      domain: null,
-      path: "",
-      maxAge: 0,
+    res.clearCookie("accessToken");
 
-      // Cookie site policy:
-      // - If using same-origin dev (Next proxy to API): Lax is fine over HTTP
-      // - If cross-site (different ports) OR you want cross-subdomain in prod: use None + Secure
-      sameSite: null,
-      secure: true, // must be true when sameSite === 'none'
-    });
-    return res.status(200).json({
-      code: 200,
-      success: true,
-      message: "Signout successful",
-      data: null,
-    });
+    const response = await authService.logout();
+    return res.status(response.code).json(response);
   } catch (error) {
-    return res.status(400).json({
-      code: 400,
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
       success: false,
-      message: error.message,
+      message: error?.message || "Internal server error",
       data: null,
     });
   }
@@ -93,55 +62,40 @@ const logout = async (req, res) => {
 const googleLogin = async (req, res) => {
   try {
     const response = await authService.googleLogin(req.body);
-    const isProd = process.env.NODE_ENV === "production";
-    res.cookie("accessToken", response.token, {
-      httpOnly: true,
-      // In dev: DO NOT set domain. In prod: set your parent domain for subdomains.
-      domain: isProd ? ".tradingbacktesting.com" : "localhost",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
 
-      // Cookie site policy:
-      // - If using same-origin dev (Next proxy to API): Lax is fine over HTTP
-      // - If cross-site (different ports) OR you want cross-subdomain in prod: use None + Secure
-      sameSite: isProd ? "none" : "lax",
-      secure: isProd, // must be true when sameSite === 'none'
-    });
+    if (response.token) {
+      const isProd = process.env.NODE_ENV === "production";
 
-    return res.status(200).json({
-      code: 200,
-      success: true,
-      jwt: response?.token,
-      message: response?.message,
-      data: response?.data,
-      redirect: response?.redirect,
-    });
+      res.cookie("accessToken", response.token, {
+        httpOnly: true,
+        domain: isProd ? ".tradingbacktesting.com" : undefined,
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        sameSite: isProd ? "none" : "lax",
+        secure: isProd,
+      });
+    }
+
+    return res.status(response.code).json(response);
   } catch (error) {
-    return res.status(400).json({
-      code: 400,
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
       success: false,
-      message: error.message,
-      jwt: null,
+      message: error?.message || "Internal server error",
       data: null,
-      redirect: null,
     });
   }
 };
 
 const forgotPassword = async (req, res) => {
   try {
-    const reponse = await authService.forgotPassword(req.body.email);
-    return res.status(200).json({
-      code: 200,
-      success: reponse.success,
-      message: reponse.message,
-      data: reponse.token,
-    });
+    const response = await authService.forgotPassword(req.body.email);
+    return res.status(response.code).json(response);
   } catch (error) {
-    return res.status(400).json({
-      code: error.statusCode,
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
       success: false,
-      message: error.message,
+      message: error?.message || "Internal server error",
       data: null,
     });
   }
@@ -149,18 +103,13 @@ const forgotPassword = async (req, res) => {
 
 const resetPassword = async (req, res) => {
   try {
-    const message = await authService.resetPassword(req.body);
-    return res.status(200).json({
-      code: 200,
-      success: true,
-      message: "Password reset successfully",
-      data: message,
-    });
+    const response = await authService.resetPassword(req.body);
+    return res.status(response.code).json(response);
   } catch (error) {
-    return res.status(400).json({
-      code: 400,
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
       success: false,
-      message: error.message,
+      message: error?.message || "Internal server error",
       data: null,
     });
   }
@@ -169,12 +118,12 @@ const resetPassword = async (req, res) => {
 const adminRegister = async (req, res) => {
   try {
     const response = await authService.adminRegister(req.body);
-    return res.status(201).json(response);
+    return res.status(response.code).json(response);
   } catch (error) {
-    return res.status(400).json({
-      code: 400,
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
       success: false,
-      message: error.message,
+      message: error?.message || "Internal server error",
       data: null,
     });
   }
@@ -183,30 +132,26 @@ const adminRegister = async (req, res) => {
 const adminLogin = async (req, res) => {
   try {
     const response = await authService.adminLogin(req.body);
-    const isProd = config.env === "production";
-    res.cookie("accessToken", response.token, {
-      httpOnly: true,
-      // In dev: DO NOT set domain. In prod: set your parent domain for subdomains.
-      domain: isProd ? ".tradingbacktesting.com" : undefined,
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      // Cookie site policy:
-      // - If using same-origin dev (Next proxy to API): Lax is fine over HTTP
-      // - If cross-site (different ports) OR you want cross-subdomain in prod: use None + Secure
-      sameSite: isProd ? "none" : "lax",
-      secure: isProd, // must be true when sameSite === 'none'
-    });
-    return res.status(200).json({
-      code: 200,
-      success: true,
-      message: "Login successful",
-      data: response.data,
-    });
+
+    if (response.token) {
+      const isProd = config.env === "production";
+
+      res.cookie("accessToken", response.token, {
+        httpOnly: true,
+        domain: isProd ? ".tradingbacktesting.com" : undefined,
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        sameSite: isProd ? "none" : "lax",
+        secure: isProd,
+      });
+    }
+
+    return res.status(response.code).json(response);
   } catch (error) {
-    return res.status(400).json({
-      code: 400,
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
       success: false,
-      message: error.message,
+      message: error?.message || "Internal server error",
       data: null,
     });
   }
@@ -214,9 +159,7 @@ const adminLogin = async (req, res) => {
 
 const verifyUserJWT = async (req, res) => {
   try {
-    const user = req?.user;
-
-    if (!user) {
+    if (!req.user) {
       return res.status(401).json({
         code: 401,
         success: false,
@@ -230,24 +173,23 @@ const verifyUserJWT = async (req, res) => {
       success: true,
       message: "User verified successfully",
       data: {
-        id: user?.id,
-        firstName: user?.firstName,
-        lastName: user?.lastName,
-        email: user?.email,
-        role: user?.role,
-        plan: user?.plan,
-        avatar_url: user?.avatar_url,
-        blocked: user?.blocked,
-        subscriptions: user?.subscriptions,
-        tradeAccounts: user?.tradeAccounts,
+        id: req.user.id,
+        firstName: req.user.firstName,
+        lastName: req.user.lastName,
+        email: req.user.email,
+        role: req.user.role,
+        plan: req.user.plan,
+        avatar_url: req.user.avatar_url,
+        blocked: req.user.blocked,
+        subscriptions: req.user.subscriptions,
+        tradeAccounts: req.user.tradeAccounts,
       },
     });
   } catch (error) {
-    console.error("JWT Verification Error:", error);
-    return res.status(error?.statusCode || 500).json({
-      code: error?.statusCode || 500,
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
       success: false,
-      message: error?.message || "Internal server error during verification",
+      message: error?.message || "Internal server error",
       data: null,
     });
   }

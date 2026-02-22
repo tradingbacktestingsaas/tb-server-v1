@@ -4,6 +4,19 @@ import TradeAccount from "../models/trade_account.model.js";
 import User from "../models/user.model.js";
 import axios from "axios";
 import config from "../config/env.js";
+import UserSubscription from "../models/user_subscription.model.js";
+import Plan from "../models/plan.model.js";
+import createError from "http-errors";
+import { getISOWeek } from "date-fns";
+
+const normalizeSymbol = (value = "") => {
+  return value
+    .toString()
+    .toUpperCase()
+    .replace("/", "") // remove slash
+    .replace(/[^A-Z0-9]/g, "") // remove non alphanumeric
+    .replace(/M$/, ""); // remove trailing broker suffix like m
+};
 
 function applyTradeFilters(trades, { selectedDate, month }) {
   const now = new Date();
@@ -87,233 +100,256 @@ export async function createTrade(tradeDetails) {
 }
 
 export async function getTrades(query = {}) {
-  console.log(query);
-
   try {
     const {
-      page = 0,
+      page = 1,
       limit = 10,
       sortBy = "createdAt",
       sortOrder = "DESC",
 
-      // filters
       id,
       type,
       status,
       accountId,
-      selectedDate,
-      month,
       symbol,
+      user_id,
+
       lots,
       minLots,
       maxLots,
-      openDate,
+
+      selectedDate,
+      month,
+      range,
+
       openDateFrom,
       openDateTo,
-      closeDate,
       closeDateFrom,
       closeDateTo,
-      range,
     } = query;
 
-    // 🔹 Step 1: Try to get trade account + user
-    let tradeAcc = null;
-    let user = null;
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
+    const offset = (pageNum - 1) * limitNum;
 
+    /* ======================================================
+       CHECK ACCOUNT + TRADESYNC ELIGIBILITY
+    ====================================================== */
+
+    let tradeAcc = null;
     if (accountId) {
-      tradeAcc = await TradeAccount.findByPk(accountId, {
-        include: [{ model: User, as: "user" }],
+      tradeAcc = await TradeAccount.findOne({
+        where: { id: accountId },
+        include: [
+          {
+            model: User,
+            as: "user",
+            include: [
+              {
+                model: UserSubscription,
+                as: "subscriptions",
+                include: [{ model: Plan, as: "plan", attributes: ["code"] }],
+              },
+            ],
+          },
+        ],
       });
-      user = tradeAcc?.user;
     }
 
+    console.log(tradeAcc, "TRADE");
+
+    // if (user_id != tradeAcc?.user?.id) {
+    //   return createError(401, "Unauthorized");
+    // }
+
     const isMTType = ["MT4", "MT5"].includes(tradeAcc?.type);
-    const isPaidUser = true;
+    const isPaidUser = tradeAcc?.user?.subscriptions?.plan?.code !== "FREE"; // replace with actual plan logic
 
-    // 🟢 Step 2: If paid user + MT4/MT5 → use TradeSync API instead of local DB
+    /* ======================================================
+       TRADESYNC MODE
+    ====================================================== */
+
     if (isPaidUser && isMTType && tradeAcc?.tradesyncId) {
-      const pageNum = Math.max(parseInt(page, 10) || 1, 1);
-      const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
-
       const tradesyncAuth = {
         username: config.trade_sync.key,
         password: config.trade_sync.secret,
       };
 
-      try {
-        // Fetch ALL trades
-        const allTradesResp = await axios.get(
-          `https://api.tradesync.com/trades?account_id=${tradeAcc.tradesyncId}`,
-          { auth: tradesyncAuth }
-        );
+      const LIMIT = 500;
+      let lastId = null;
+      let hasMore = true;
+      let allTrades = [];
 
-        let allTrades = allTradesResp?.data?.data || [];
+      while (hasMore) {
+        const url = new URL("https://api.tradesync.com/trades");
+        url.searchParams.append("account_id", tradeAcc.tradesyncId);
+        url.searchParams.append("limit", LIMIT);
 
-        // 🟢 APPLY FILTERS HERE
-        allTrades = applyTradeFilters(allTrades, { selectedDate, month });
+        if (lastId) url.searchParams.append("last_id", lastId);
 
-        const total = allTrades.length;
+        const response = await axios.get(url.toString(), {
+          auth: tradesyncAuth,
+        });
 
-        // Manual pagination
-        const startIndex = (pageNum - 1) * limitNum;
-        const paginatedTrades = allTrades.slice(
-          startIndex,
-          startIndex + limitNum
-        );
+        const trades = response.data?.data || [];
+        const meta = response.data?.meta || {};
 
-        const totalPages = Math.ceil(total / limitNum);
+        allTrades.push(...trades);
 
-        return {
-          code: 200,
-          success: true,
-          message:
-            "Trades fetched from TradeSync successfully (filtered + paginated)",
-          sync: true,
-          data: paginatedTrades,
-          pagination: {
-            total,
-            page: pageNum,
-            limit: limitNum,
-            totalPages,
-          },
-        };
-      } catch (apiError) {
-        console.error(
-          "TradeSync API error:",
-          apiError.response?.data || apiError.message
-        );
-        throw new Error(
-          `Failed to fetch trades from TradeSync: ${
-            apiError.response?.data?.message || apiError.message
-          }`
-        );
+        if (meta?.last_id && trades.length > 0) {
+          lastId = meta.last_id;
+        } else {
+          hasMore = false;
+        }
       }
-    }
-    // 🟡 Step 3: Local DB fallback (FREE plan or non-MT4/MT5)
-    const whereClause = {};
 
-    if (id) whereClause.id = id;
-    if (type) whereClause.type = type;
-    if (status) whereClause.status = status;
-    if (accountId) whereClause.accountId = accountId;
-    if (symbol) whereClause.symbol = symbol;
-    if (selectedDate) whereClause.openDate = selectedDate;
-    if (month) whereClause.openDate = month;
-    if (range) whereClause.openDate = range;
+      /* ===== FILTER CLOSED ONLY ===== */
 
-    if (selectedDate) {
-      const start = new Date(selectedDate);
-      const end = new Date(start);
-      end.setHours(23, 59, 59, 999);
+      let filtered = allTrades.filter(
+        (t) => t.state === "closed" && t.close_time,
+      );
 
-      whereClause.openDate = {
-        [Op.between]: [start, end],
+      /* ===== APPLY BASIC FILTERS ===== */
+      if (symbol) {
+        const normalized = symbol.replace("/USD", "m");
+        filtered = filtered.filter((t) => t.symbol === normalized);
+      }
+
+      /* TYPE FILTER */
+      if (type) {
+        filtered = filtered.filter((t) => t.type === type);
+      }
+
+      if (status) filtered = filtered.filter((t) => t.status === status);
+
+      /* ===== DATE RANGE FILTER ===== */
+
+      /* DATE RANGE FILTER */
+      if (closeDateFrom || closeDateTo) {
+        const from = closeDateFrom ? new Date(closeDateFrom) : null;
+        const to = closeDateTo ? new Date(closeDateTo) : null;
+
+        filtered = filtered.filter((t) => {
+          const close = new Date(t.close_time);
+          if (from && close < from) return false;
+          if (to && close > to) return false;
+          return true;
+        });
+      }
+
+      if (range) {
+        const now = new Date();
+        let start = null;
+
+        if (range === "current") {
+          start = new Date(now.getFullYear(), now.getMonth(), 1);
+        } else if (range === "3m") {
+          start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        } else if (range === "6m") {
+          start = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+        }
+
+        if (start) {
+          filtered = filtered.filter((t) => {
+            const close = new Date(t.close_time);
+            return close >= start && close <= now;
+          });
+        }
+      }
+
+      if (sortBy) {
+        filtered.sort((a, b) => {
+          const aVal = a[sortBy];
+          const bVal = b[sortBy];
+
+          if (sortOrder === "ASC") {
+            return aVal > bVal ? 1 : -1;
+          }
+          return aVal < bVal ? 1 : -1;
+        });
+      }
+
+      const total = filtered.length;
+      const paginated = filtered.slice(offset, offset + limitNum);
+
+      return {
+        success: true,
+        source: "tradesync",
+        data: paginated,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum) || 1,
+        },
       };
     }
 
-    /* -------------------------------------------
-   ✅ MONTH FILTER (YYYY-MM) → Full month range
-------------------------------------------- */
-    // ✅ DAY FILTER (YYYY-MM-DD)
-    if (selectedDate) {
-      const start = new Date(selectedDate);
-      const end = new Date(start);
-      end.setHours(23, 59, 59, 999);
+    /* ======================================================
+       LOCAL DATABASE MODE
+    ====================================================== */
 
-      whereClause.openDate = {
-        [Op.between]: [start, end],
-      };
-    }
+    const where = {};
 
-    // ✅ MONTH FILTER (YYYY-MM)
-    if (month && isValidYM(month)) {
-      const [year, monthNum] = month.split("-").map(Number);
+    if (id) where.id = id;
+    if (type) where.type = type;
+    if (status) where.status = status;
+    if (accountId) where.accountId = accountId;
+    if (symbol) where.symbol = symbol;
 
-      const startOfMonth = new Date(year, monthNum - 1, 1);
-      const endOfMonth = new Date(year, monthNum, 1); // first day of next month
+    /* ===== LOTS FILTER ===== */
 
-      whereClause.openDate = {
-        [Op.gte]: startOfMonth,
-        [Op.lt]: endOfMonth,
-      };
-    }
-
-    // ✅ RANGE FILTER (current, 3m, 6m)
-    if (range) {
-      const now = new Date();
-      let start = null;
-
-      if (range === "current") {
-        start = new Date(now.getFullYear(), now.getMonth(), 1);
-      } else if (range === "3m") {
-        start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-      } else if (range === "6m") {
-        start = new Date(now.getFullYear(), now.getMonth() - 6, 1);
-      }
-
-      if (start) {
-        whereClause.openDate = {
-          [Op.gte]: start,
-          [Op.lt]: now,
-        };
-      }
-    }
-
-    // lots exact or range
-    if (lots !== undefined && lots !== null && lots !== "") {
-      whereClause.lots = Number(lots);
+    if (lots !== undefined) {
+      where.lots = Number(lots);
     } else if (minLots || maxLots) {
-      whereClause.lots = {};
-      if (minLots) whereClause.lots[Op.gte] = Number(minLots);
-      if (maxLots) whereClause.lots[Op.lte] = Number(maxLots);
+      where.lots = {};
+      if (minLots) where.lots[Op.gte] = Number(minLots);
+      if (maxLots) where.lots[Op.lte] = Number(maxLots);
     }
 
-    // openDate filters
+    /* ===== DATE FILTERS ===== */
+
+    if (selectedDate) {
+      const start = new Date(selectedDate);
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+      where.openDate = { [Op.between]: [start, end] };
+    }
+
+    if (month) {
+      const [year, monthNum] = month.split("-").map(Number);
+      const start = new Date(year, monthNum - 1, 1);
+      const end = new Date(year, monthNum, 1);
+      where.openDate = { [Op.gte]: start, [Op.lt]: end };
+    }
+
     if (openDateFrom || openDateTo) {
-      whereClause.openDate = {};
-      if (openDateFrom) whereClause.openDate[Op.gte] = new Date(openDateFrom);
-      if (openDateTo) whereClause.openDate[Op.lte] = new Date(openDateTo);
-    } else if (openDate) {
-      const start = new Date(openDate);
-      const end = new Date(start);
-      end.setHours(23, 59, 59, 999);
-      whereClause.openDate = { [Op.between]: [start, end] };
+      where.openDate = {};
+      if (openDateFrom) where.openDate[Op.gte] = new Date(openDateFrom);
+      if (openDateTo) where.openDate[Op.lte] = new Date(openDateTo);
     }
 
-    // closeDate filters
     if (closeDateFrom || closeDateTo) {
-      whereClause.closeDate = {};
-      if (closeDateFrom)
-        whereClause.closeDate[Op.gte] = new Date(closeDateFrom);
-      if (closeDateTo) whereClause.closeDate[Op.lte] = new Date(closeDateTo);
-    } else if (closeDate) {
-      const start = new Date(closeDate);
-      const end = new Date(start);
-      end.setHours(23, 59, 59, 999);
-      whereClause.closeDate = { [Op.between]: [start, end] };
+      where.closeDate = {};
+      if (closeDateFrom) where.closeDate[Op.gte] = new Date(closeDateFrom);
+      if (closeDateTo) where.closeDate[Op.lte] = new Date(closeDateTo);
     }
 
-    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
-    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
-    const offset = (pageNum - 1) * limitNum;
     const order = [
       [sortBy, String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC"],
     ];
 
     const { rows, count } = await Trade.findAndCountAll({
-      where: whereClause,
+      where,
       offset,
       limit: limitNum,
       order,
     });
 
     return {
-      code: 200,
       success: true,
-      message: "Trades fetched from local DB successfully",
       source: "local",
       data: rows,
-      sync: false,
       pagination: {
         total: count,
         page: pageNum,
@@ -322,8 +358,222 @@ export async function getTrades(query = {}) {
       },
     };
   } catch (error) {
-    console.error("Error in getTrades service:", error);
+    console.error("getTrades error:", error);
     throw new Error(`Failed to fetch trades: ${error.message}`);
+  }
+}
+
+export async function getTradeJournal(query = {}) {
+  try {
+    const { accountId, user_id, month } = query;
+
+    if (!accountId) throw new Error("accountId is required");
+    if (!month || !/^\d{4}-\d{2}$/.test(month))
+      throw new Error("month must be in YYYY-MM format");
+
+    const [year, monthNum] = month.split("-").map(Number);
+
+    // ✅ UTC-safe boundaries
+    const startDate = new Date(Date.UTC(year, monthNum - 1, 1, 0, 0, 0, 0));
+    const endDate = new Date(Date.UTC(year, monthNum, 0, 23, 59, 59, 999));
+
+    /* ===============================
+       ACCOUNT VALIDATION
+    =============================== */
+
+    const tradeAcc = await TradeAccount.findOne({
+      where: { id: accountId, userId: user_id },
+      include: [
+        {
+          model: User,
+          as: "user",
+          include: [
+            {
+              model: UserSubscription,
+              as: "subscriptions",
+              include: [{ model: Plan, as: "plan", attributes: ["code"] }],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!tradeAcc) throw new Error("Trade account not found");
+    if (user_id && tradeAcc.user.id !== user_id)
+      throw new Error("Unauthorized");
+
+    const isMTType = ["MT4", "MT5"].includes(tradeAcc.type);
+    const isPaidUser = tradeAcc?.user?.subscriptions?.plan?.code !== "FREE";
+
+    let trades = [];
+
+    /* ===============================
+       TRADESYNC MODE
+    =============================== */
+
+    if (isPaidUser && isMTType && tradeAcc.tradesyncId) {
+      const tradesyncAuth = {
+        username: config.trade_sync.key,
+        password: config.trade_sync.secret,
+      };
+
+      const url = new URL("https://api.tradesync.com/trades");
+      url.searchParams.append("account_id", tradeAcc.tradesyncId);
+      url.searchParams.append("state", "closed");
+
+      // Some APIs ignore filtering — we still enforce later
+      url.searchParams.append("from", startDate.toISOString());
+      url.searchParams.append("to", endDate.toISOString());
+
+      const response = await axios.get(url.toString(), {
+        auth: tradesyncAuth,
+        timeout: 10000,
+      });
+
+      const rawTrades = response.data?.data || [];
+
+      // ✅ Enforce filtering again locally (never trust external API)
+      trades = rawTrades
+        .filter((t) => {
+          if (!t.close_time) return false;
+          const closeDate = new Date(t.close_time);
+          return closeDate >= startDate && closeDate <= endDate;
+        })
+        .map((t) => ({
+          symbol: t.symbol,
+          lots: Number(t.lots) || 0,
+          profit: Number(t.profit) || 0,
+          closeDate: new Date(t.close_time),
+        }));
+    } else {
+      /* ===============================
+       LOCAL DATABASE MODE
+    =============================== */
+      const where = {
+        accountId,
+        closeDate: { [Op.between]: [startDate, endDate] },
+      };
+
+      if (tradeAcc?.id) where.accountId = tradeAcc.id;
+
+      const dbTrades = await Trade.findAll({
+        where,
+        attributes: ["symbol", "lots", "profit", "closeDate"],
+        order: [["closeDate", "ASC"]],
+      });
+
+      trades = dbTrades.map((t) => ({
+        symbol: t.symbol,
+        lots: Number(t.lots) || 0,
+        profit: Number(t.profit) || 0,
+        closeDate: new Date(t.closeDate),
+      }));
+    }
+
+    /* ===============================
+       GROUP BY DAY (UTC-safe)
+    =============================== */
+
+    const dayMap = new Map();
+
+    trades.forEach((trade) => {
+      const d = new Date(trade.closeDate);
+      const utcKey = new Date(
+        Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+      )
+        .toISOString()
+        .split("T")[0];
+
+      if (!dayMap.has(utcKey)) {
+        dayMap.set(utcKey, {
+          date: utcKey,
+          totalProfit: 0,
+          totalLots: 0,
+          tradeCount: 0,
+        });
+      }
+
+      const entry = dayMap.get(utcKey);
+      entry.totalProfit += trade.profit;
+      entry.totalLots += trade.lots;
+      entry.tradeCount += 1;
+    });
+
+    const days = Array.from(dayMap.values());
+
+    /* ===============================
+       GROUP DAYS INTO ISO WEEKS
+    =============================== */
+
+    const weekMap = new Map();
+
+    days.forEach((day) => {
+      const weekNumber = getISOWeek(new Date(day.date));
+
+      if (!weekMap.has(weekNumber)) {
+        weekMap.set(weekNumber, {
+          week: weekNumber,     
+          days: [],
+          weekProfit: 0,
+          weekLots: 0,
+          weekTrades: 0,
+        });
+      }
+
+      const weekEntry = weekMap.get(weekNumber);
+      weekEntry.days.push(day);
+      weekEntry.weekProfit += day.totalProfit;
+      weekEntry.weekLots += day.totalLots;
+      weekEntry.weekTrades += day.tradeCount;
+    });
+
+    const dataByWeeks = Array.from(weekMap.values()).sort(
+      (a, b) => a.week - b.week,
+    );
+
+    /* ===============================
+       MONTH INSIGHTS
+    =============================== */
+
+    const totalProfit = trades.reduce((s, t) => s + t.profit, 0);
+    const totalLots = trades.reduce((s, t) => s + t.lots, 0);
+    const totalTrades = trades.length;
+
+    const winningDays = days.filter((d) => d.totalProfit > 0).length;
+    const losingDays = days.filter((d) => d.totalProfit < 0).length;
+
+    const sortedDays = [...days].sort((a, b) => b.totalProfit - a.totalProfit);
+
+    const bestDay = sortedDays[0] || null;
+    const worstDay =
+      sortedDays.length > 0 ? sortedDays[sortedDays.length - 1] : null;
+
+    return {
+      success: true,
+      source:
+        isPaidUser && isMTType && tradeAcc?.tradesyncId ? "tradesync" : "local",
+      data: {
+        dataByWeeks,
+        currentMonthInsights: {
+          totalTrades,
+          totalProfit,
+          totalLots,
+          winningDays,
+          losingDays,
+          bestDay,
+          worstDay,
+        },
+        currentMonth: {
+          year,
+          month: monthNum,
+          startDate,
+          endDate,
+        },
+      },
+    };
+  } catch (error) {
+    console.error("getTradeJournal error:", error);
+    throw new Error(`Failed to fetch trade journal: ${error.message}`);
   }
 }
 
@@ -426,6 +676,7 @@ export async function bulkCreateTrade(body) {
 export const tradeService = {
   createTrade,
   getTrades,
+  getTradeJournal,
   updateTrade,
   deleteTrade,
   bulkDeleteTrade,

@@ -108,3 +108,15 @@ BillingCustomer.belongsTo(User, {
   foreignKey: "userId",
   as: "userInfo",
 });
+
+
+// // // VerificationRequest associations
+// User.hasMany(VerificationRequest, {
+//   foreignKey: 'user_id',
+//   as: 'verificationRequests',
+// });
+
+// VerificationRequest.belongsTo(User, {
+//   foreignKey: 'user_id',
+//   as: 'User',
+// });
