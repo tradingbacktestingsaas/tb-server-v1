@@ -295,131 +295,118 @@ export async function getBrokers(req) {
 // }
 
 export async function switchTradeAcc({ userId, tradeAccId, type }) {
+  const allowedTypes = ["FREE", "MT4", "MT5"];
+  const requestedType = typeof type === "string" ? type.toUpperCase().trim() : null;
+
   try {
+    if (!userId) throw new Error("userId is required");
     if (!tradeAccId) throw new Error("tradeAccId is required");
-
-    const user = await User.findByPk(userId);
-    if (!user) throw new Error("User not found");
-
-    // Fetch the trade account properly
-    const tradeAcc = await TradeAcc.findOne({
-      where: { id: tradeAccId, userId: user.id },
-    });
-
-    if (!tradeAcc) throw new Error("Trade account not found");
-
-    if (tradeAcc.isActive) {
-      return {
-        message: "Trade account switched successfully",
-        data: tradeAcc,
-        success: true,
-      };
+    if (requestedType && !allowedTypes.includes(requestedType)) {
+      throw new Error("Invalid account type");
     }
 
-    // ============ FREE ACCOUNT HANDLING ============
-    if (type === "FREE") {
-      // deactivate all accounts
-      await TradeAccount.update(
-        { isActive: false },
-        {
-          where: {
-            userId: user.id,
-            type: { [Op.in]: ["MT4", "MT5"] },
-          },
-        },
-      );
+    const t = await sequelize.transaction();
 
-      // activate the selected one
-      await tradeAcc.update({ isActive: true, type: "FREE" });
+    try {
+      const user = await User.findByPk(userId, {
+        attributes: ["id", "plan"],
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!user) throw new Error("User not found");
 
-      return {
-        message: "Trade account switched successfully",
-        data: tradeAcc,
-        success: true,
-      };
-    }
+      const tradeAcc = await TradeAcc.findOne({
+        where: { id: tradeAccId, userId: user.id },
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
 
-    // ============ MT4 / MT5 ACCOUNT HANDLING ============
-    if (type === "MT4" || type === "MT5") {
-      if (user.plan === "FREE") {
+      if (!tradeAcc) throw new Error("Trade account not found");
+
+      const targetType = requestedType || tradeAcc.type;
+      if (!allowedTypes.includes(targetType)) {
+        throw new Error("Invalid account type");
+      }
+
+      if (tradeAcc.type !== targetType) {
+        throw new Error("Account type mismatch");
+      }
+
+      if (tradeAcc.isActive) {
+        await t.commit();
         return {
-          message:
+          message: "Trade account switched successfully",
+          data: tradeAcc,
+          success: true,
+        };
+      }
+
+      if (targetType === "MT4" || targetType === "MT5") {
+        if (user.plan === "FREE") {
+          throw new Error(
             "Your current plan does not allow SYNC accounts. Please upgrade.",
-          success: true,
-          data: null,
-        };
-      }
+          );
+        }
 
-      // Try remote fetch
-      let syncedAccount = null;
-      try {
-        const resp = await axios.get(
-          `${config.trade_sync.url}/accounts/${tradeAcc.tradesyncId}`,
-          {
-            auth: {
-              username: config.trade_sync.key,
-              password: config.trade_sync.secret,
-            },
-          },
-        );
-        syncedAccount = resp?.data?.data || null;
-      } catch {
-        // fallback: list all
-        const listResp = await axios.get(`${config.trade_sync.url}/accounts`, {
-          auth: {
-            username: config.trade_sync.key,
-            password: config.trade_sync.secret,
-          },
-        });
+        if (!tradeAcc.tradesyncId) {
+          throw new Error("Trade account is not linked with sync service");
+        }
 
-        const accounts = listResp?.data?.data || [];
-        syncedAccount = accounts.find(
-          (acc) => String(acc.id) === String(tradeAcc.tradesyncId),
-        );
-      }
-
-      if (!syncedAccount)
-        return {
-          message:
+        try {
+          const resp = await tradeSyncGet(`/accounts/${tradeAcc.tradesyncId}`);
+          const syncedAccount = resp?.data?.data || null;
+          if (!syncedAccount) {
+            throw new Error(
+              "Trade account not found in sync service, please try again later",
+            );
+          }
+        } catch {
+          throw new Error(
             "Trade account not found in sync service, please try again later",
-          success: true,
-          data: null,
-        };
-      // deactivate all accounts
-      await TradeAccount.update(
+          );
+        }
+      }
+
+      await TradeAcc.update(
         { isActive: false },
         {
           where: {
             userId: user.id,
-            type: { [Op.in]: ["MT4", "MT5", "FREE"] },
+            type: { [Op.in]: allowedTypes },
           },
+          transaction: t,
         },
       );
 
-      // activate selected account
-      await tradeAcc.update({ type, isActive: true });
+      await tradeAcc.update({ isActive: true }, { transaction: t });
+
+      await t.commit();
 
       return {
         message: "Trade account switched successfully",
         data: tradeAcc,
         success: true,
       };
+    } catch (innerError) {
+      await t.rollback();
+      throw innerError;
     }
 
-    throw new Error("Invalid account type");
   } catch (err) {
     console.error("Error in switchTradeAcc:", err);
     throw new Error(`Failed to switch trade account: ${err.message}`);
   }
 }
 
-export async function activeTradeAcc(userId) {
+export async function activeTradeAcc(q) {
+  const { userId, tradeAccId } = q;
   const user = await User.findByPk(userId);
   if (!user) {
     throw new Error("User not found");
   }
-  const tradeAcc = await TradeAcc.findByPk(user.activeTradeAccountId);
-  tradeAcc.investor_password = decrypt(tradeAcc.investor_password);
+  const tradeAcc = await TradeAcc.findOne({
+    where: { userId, isActive: true },
+  });
 
   if (!tradeAcc) {
     throw new Error("Trade account not found");

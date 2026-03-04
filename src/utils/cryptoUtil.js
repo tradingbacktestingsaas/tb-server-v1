@@ -17,9 +17,22 @@ function encrypt(text) {
 }
 
 function decrypt(text) {
+  if (typeof text !== "string" || !text.includes(":")) {
+    return null;
+  }
+
   const [ivHex, encryptedHex] = text.split(":");
+  if (!ivHex || !encryptedHex) {
+    return null;
+  }
+
   const iv = Buffer.from(ivHex, "hex");
   const encryptedText = Buffer.from(encryptedHex, "hex");
+
+  if (!iv.length || !encryptedText.length) {
+    return null;
+  }
+
   const decipher = crypto.createDecipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
   const decrypted = Buffer.concat([
     decipher.update(encryptedText),
