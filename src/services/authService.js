@@ -1,4 +1,5 @@
 import createError from "http-errors";
+import { Op } from "sequelize";
 import Admin from "../models/admin.model.js";
 import User from "../models/user.model.js";
 import { OAuth2Client } from "google-auth-library";
@@ -8,7 +9,7 @@ import {
   generateToken,
   verifyToken,
 } from "../utils/jwt.js";
-import { sendPasswordResetEmail } from "../utils/email.js";
+import { sendEmail, sendPasswordResetEmail } from "../utils/email.js";
 import config from "../config/env.js";
 import TradeAccount from "../models/trade_account.model.js";
 import UserSubscription from "../models/user_subscription.model.js";
@@ -66,6 +67,11 @@ export async function login({ email, password }) {
       "password",
       "avatar_url",
       "createdAt",
+      "is_notifications_enabled",
+      "is_update_enabled",
+      "is_feedback_completed",
+      "onboarding_completed",
+      "is_verified",
       "updatedAt",
       "role",
       "plan",
@@ -84,6 +90,9 @@ export async function login({ email, password }) {
       },
     ],
   });
+
+  console.log(user);
+
   if (!user) throw createError(401, "not-found");
   const match = await comparePassword(password, user.password);
   if (!match) throw createError(401, "invalid-password");
@@ -106,6 +115,11 @@ export async function login({ email, password }) {
     email: user.email,
     role: user.role,
     plan: user.plan,
+    onboarding_completed: user.onboarding_completed,
+    is_verified: user.is_verified,
+    is_notifications_enabled: user.is_notifications_enabled,
+    is_update_enabled: user.is_update_enabled,
+    is_feedback_completed: user.is_feedback_completed,
     blocked: user.blocked,
     avatar_url: user.avatar_url,
     tradeAccounts: user.tradeAccounts,
@@ -157,22 +171,41 @@ export async function googleLogin({ credential }) {
   const { email, given_name, picture, family_name } = payload;
 
   const user = await User.findOne({
-    where: { email: email },
+    where: { email },
     attributes: [
-    "id",
+      "id",
       "firstName",
       "lastName",
       "email",
       "blocked",
+      "password",
       "avatar_url",
       "createdAt",
+      "is_notifications_enabled",
+      "is_update_enabled",
+      "is_feedback_completed",
+      "onboarding_completed",
+      "is_verified",
       "updatedAt",
       "role",
       "plan",
     ],
+    include: [
+      {
+        model: TradeAccount,
+        as: "tradeAccounts",
+        where: { isActive: true },
+        required: false,
+      },
+      {
+        model: UserSubscription,
+        as: "subscriptions",
+        include: [{ model: Plan, as: "plan", attributes: ["code"] }],
+      },
+    ],
   });
 
-  if (user) {
+  if (user && !user.blocked && user.is_verified) {
     token = generateToken(
       {
         sub: user.id,
@@ -281,6 +314,204 @@ export async function resetPassword({ token, password }) {
   return true;
 }
 
+function generateNumericOtp(length = 6) {
+  const min = 10 ** (length - 1);
+  const max = 10 ** length - 1;
+  return Math.floor(min + Math.random() * (max - min + 1)).toString();
+}
+
+async function sendResendOTPEmail(to, otp) {
+  const subject = "Your verification OTP";
+  const text = `Your verification OTP is ${otp}. It expires in 10 minutes.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <h2>Email Verification OTP</h2>
+      <p>Your OTP is:</p>
+      <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px;">${otp}</p>
+      <p>This OTP expires in 10 minutes.</p>
+    </div>
+  `;
+  await sendEmail(to, subject, text, html);
+}
+
+async function sendPasswordResetOtpEmail(to, otp) {
+  const subject = "Your password reset OTP";
+  const text = `Your password reset OTP is ${otp}. It expires in 10 minutes.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+      <h2>Password Reset OTP</h2>
+      <p>Your OTP is:</p>
+      <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px;">${otp}</p>
+      <p>This OTP expires in 10 minutes.</p>
+    </div>
+  `;
+  await sendEmail(to, subject, text, html);
+}
+
+export async function verifyOTP({ email, otp }) {
+  const normalizedEmail = email?.toLowerCase();
+  const user = await User.findOne({ where: { email: normalizedEmail } });
+
+  if (!user) {
+    return {
+      code: 401,
+      success: false,
+      message: "user-not-found",
+    };
+  }
+
+  const match = otp === user.otp;
+  if (!match) {
+    return {
+      code: 401,
+      success: false,
+      message: "invalid-otp",
+    };
+  }
+
+  const isOTPExpired = !user.otp_expiry || user.otp_expiry < new Date();
+  if (isOTPExpired) {
+    return {
+      code: 401,
+      success: false,
+      message: "otp-expired",
+    };
+  }
+
+  await user.update({
+    is_verified: true,
+    otp: null,
+    otp_expiry: null,
+  });
+
+  return {
+    code: 200,
+    success: true,
+    message: "otp-verified-successfully",
+    data: {},
+  };
+}
+
+export async function resendOTP(email) {
+  const normalizedEmail = email?.toLowerCase();
+  const user = await User.findOne({ where: { email: normalizedEmail } });
+
+  if (!user) {
+    return {
+      code: 404,
+      success: false,
+      message: "user-not-found",
+    };
+  }
+
+  if (user.is_verified) {
+    return {
+      code: 400,
+      success: false,
+      message: "user-already-verified",
+    };
+  }
+
+  const otp = generateNumericOtp(6);
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  await user.update({
+    otp,
+    otp_expiry: otpExpiry,
+  });
+
+  await sendResendOTPEmail(user.email, otp);
+
+  return {
+    code: 200,
+    success: true,
+    message: "otp-sent-successfully",
+    data: { email: user.email },
+  };
+}
+
+export async function sendPasswordResetOTP(email) {
+  const normalizedEmail = email?.toLowerCase();
+  const user = await User.findOne({ where: { email: normalizedEmail } });
+
+  if (!user) {
+    return {
+      code: 401,
+      success: false,
+      message: "user-not-found",
+    };
+  }
+
+  const otp = generateNumericOtp(6);
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  await user.update({
+    reset_otp: otp,
+    reset_otp_expiry: otpExpiry,
+  });
+
+  await sendPasswordResetOtpEmail(user.email, otp);
+
+  return {
+    code: 200,
+    success: true,
+    message: "otp-sent-successfully",
+    data: { email: user.email },
+  };
+}
+
+export async function verifyPasswordResetOTP(email, otp) {
+  const normalizedEmail = email?.toLowerCase();
+  const user = await User.findOne({
+    where: {
+      email: normalizedEmail,
+      reset_otp: otp,
+      reset_otp_expiry: {
+        [Op.gte]: new Date(),
+      },
+    },
+  });
+
+  return !!user;
+}
+
+export async function resetPasswordWithOTP(email, otp, newPassword) {
+  const normalizedEmail = email?.toLowerCase();
+  const isValid = await verifyPasswordResetOTP(normalizedEmail, otp);
+
+  if (!isValid) {
+    return {
+      code: 401,
+      success: false,
+      message: "invalid-otp",
+    };
+  }
+
+  const user = await User.findOne({ where: { email: normalizedEmail } });
+  if (!user) {
+    return {
+      code: 401,
+      success: false,
+      message: "user-not-found",
+    };
+  }
+
+  const hashedPassword = await hashPassword(newPassword);
+
+  await user.update({
+    password: hashedPassword,
+    reset_otp: null,
+    reset_otp_expiry: null,
+  });
+
+  return {
+    code: 200,
+    success: true,
+    message: "password-reset-successfully",
+    data: {},
+  };
+}
+
 export async function adminRegister({
   first_name,
   last_name,
@@ -366,13 +597,45 @@ export async function adminLogin({ email, password }) {
   };
 }
 
+export async function completeOnboarding(userId) {
+  const user = await User.findByPk(userId);
+
+  if (!user) {
+    throw createError(404, "User not found");
+  }
+
+  if (user.onboarding_completed) {
+    return {
+      code: 200,
+      success: true,
+      message: "Onboarding already completed",
+      data: { onboarding_completed: true },
+    };
+  }
+
+  await user.update({ onboarding_completed: true });
+
+  return {
+    code: 200,
+    success: true,
+    message: "Onboarding completed successfully",
+    data: { onboarding_completed: true },
+  };
+}
+
 export const authService = {
   register,
   login,
   googleLogin,
+  verifyOTP,
+  resendOTP,
+  sendPasswordResetOTP,
+  verifyPasswordResetOTP,
+  resetPasswordWithOTP,
   createPasswordResetToken,
   forgotPassword,
   resetPassword,
   adminRegister,
   adminLogin,
+  completeOnboarding,
 };

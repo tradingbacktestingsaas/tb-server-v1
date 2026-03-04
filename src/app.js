@@ -24,11 +24,13 @@ import plansRoutes from "./routes/planRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoute.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import ordersRoutes from "./routes/ordersRoutes.js";
-import webhookRoute from "./routes/webhookRoute.js";
+import feedBackRoutes from "./routes/feedbackRoutes.js";
+import bugReportRoutes from "./routes/bugReportRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
 import DashboardRoutes from "./routes/dashboardRoute.js";
 import tradeSyncRoutes from "./routes/tradeSyncWebhook.js";
 import userPersonalStrategyRoutes from "./routes/userPersonalStrategyRoutes.js";
+import feedbackRoutes from "./routes/feedbackRoutes.js";
 
 import {
   startSubscriptionCron,
@@ -105,6 +107,9 @@ app.use(`${globalPrefix}/orders`, ordersRoutes);
 app.use(`${globalPrefix}/coupons`, couponRoutes);
 app.use(`${globalPrefix}/dashboard`, DashboardRoutes);
 app.use(`${globalPrefix}/user-strategy`, userPersonalStrategyRoutes);
+app.use(`${globalPrefix}/feedback`, feedbackRoutes);
+app.use(`${globalPrefix}/bug-report`, bugReportRoutes);
+app.use(`${globalPrefix}/feedback`, feedBackRoutes);
 
 startSubscriptionCron();
 reminderSubscriptionCron();

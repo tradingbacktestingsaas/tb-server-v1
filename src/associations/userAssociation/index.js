@@ -8,6 +8,8 @@ import Plan from "../../models/plan.model.js";
 import PurchasedStrategies from "../../models/purchased_strategies.model.js";
 import Strategy from "../../models/strategies.model.js";
 import BillingCustomer from "../../models/billing_customer.model.js";
+import Feedback from "../../models/feedback.model.js";
+import BugReport from "../../models/bug_report.model.js";
 
 //User <-> TradeAccount Association
 User.hasMany(TradeAccount, {
@@ -109,6 +111,27 @@ BillingCustomer.belongsTo(User, {
   as: "userInfo",
 });
 
+//User <-> Feedback Association
+User.hasMany(Feedback, {
+  foreignKey: "userId",
+  as: "feedbacks",
+  onDelete: "CASCADE",
+});
+Feedback.belongsTo(User, {
+  foreignKey: "userId",
+  as: "user",
+});
+
+//User <-> BugReport Association
+User.hasMany(BugReport, {
+  foreignKey: "userId",
+  as: "bugReports",
+  onDelete: "CASCADE",
+});
+BugReport.belongsTo(User, {
+  foreignKey: "userId",
+  as: "user",
+});
 
 // // // VerificationRequest associations
 // User.hasMany(VerificationRequest, {

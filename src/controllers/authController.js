@@ -115,6 +115,88 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const verifyOTP = async (req, res) => {
+  try {
+    const response = await authService.verifyOTP(req.body);
+    return res.status(response.code).json(response);
+  } catch (error) {
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
+      success: false,
+      message: error?.message || "Internal server error",
+      data: null,
+    });
+  }
+};
+
+const resendOTP = async (req, res) => {
+  try {
+    const response = await authService.resendOTP(req.body.email);
+    return res.status(response.code).json(response);
+  } catch (error) {
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
+      success: false,
+      message: error?.message || "Internal server error",
+      data: null,
+    });
+  }
+};
+
+const sendPasswordResetOTP = async (req, res) => {
+  try {
+    const response = await authService.sendPasswordResetOTP(req.body.email);
+    return res.status(response.code).json(response);
+  } catch (error) {
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
+      success: false,
+      message: error?.message || "Internal server error",
+      data: null,
+    });
+  }
+};
+
+const verifyPasswordResetOTP = async (req, res) => {
+  try {
+    const isValid = await authService.verifyPasswordResetOTP(
+      req.body.email,
+      req.body.otp,
+    );
+    return res.status(200).json({
+      code: 200,
+      success: true,
+      message: "otp-verification-result",
+      data: { isValid },
+    });
+  } catch (error) {
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
+      success: false,
+      message: error?.message || "Internal server error",
+      data: null,
+    });
+  }
+};
+
+const resetPasswordWithOTP = async (req, res) => {
+  try {
+    const response = await authService.resetPasswordWithOTP(
+      req.body.email,
+      req.body.otp,
+      req.body.newPassword,
+    );
+    return res.status(response.code).json(response);
+  } catch (error) {
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
+      success: false,
+      message: error?.message || "Internal server error",
+      data: null,
+    });
+  }
+};
+
 const adminRegister = async (req, res) => {
   try {
     const response = await authService.adminRegister(req.body);
@@ -181,6 +263,7 @@ const verifyUserJWT = async (req, res) => {
         plan: req.user.plan,
         avatar_url: req.user.avatar_url,
         blocked: req.user.blocked,
+        onboarding_completed: req.user.onboarding_completed,
         subscriptions: req.user.subscriptions,
         tradeAccounts: req.user.tradeAccounts,
       },
@@ -195,9 +278,29 @@ const verifyUserJWT = async (req, res) => {
   }
 };
 
+const completeOnboarding = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const response = await authService.completeOnboarding(userId);
+    return res.status(response.code).json(response);
+  } catch (error) {
+    return res.status(error?.status || 500).json({
+      code: error?.status || 500,
+      success: false,
+      message: error?.message || "Internal server error",
+      data: null,
+    });
+  }
+};
+
 export const authController = {
   register,
   login,
+  verifyOTP,
+  resendOTP,
+  sendPasswordResetOTP,
+  verifyPasswordResetOTP,
+  resetPasswordWithOTP,
   forgotPassword,
   resetPassword,
   adminRegister,
@@ -205,4 +308,5 @@ export const authController = {
   verifyUserJWT,
   googleLogin,
   logout,
+  completeOnboarding,
 };
