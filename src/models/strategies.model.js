@@ -13,7 +13,11 @@ const Strategy = sequelize.define(
       type: DataTypes.STRING(255),
       allowNull: false,
     },
-    comment: {
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    content: {
       type: DataTypes.TEXT,
       allowNull: true,
     },
@@ -61,6 +65,14 @@ const Strategy = sequelize.define(
     timestamps: true, // adds createdAt and updatedAt
     createdAt: "created_at",
     updatedAt: "updated_at",
+    indexes: [
+      {
+        fields: ["title"],
+      },
+      {
+        fields: ["type"],
+      },
+    ],
   },
 );
 

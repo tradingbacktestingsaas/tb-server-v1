@@ -195,6 +195,20 @@ export async function subscribe(subscriptionDetails) {
     await Users.update({ plan: plan.code }, { where: { id: user.id } });
     await createFreeTradeAcc(user.id);
 
+    await createNotification({
+      userId: user.id,
+      title: "Subscription created",
+      type: "alert",
+      message: `Your ${plan.code} subscription is now ${
+        stripeSub.status === "active" ? "active" : "pending activation"
+      }.`,
+      data: {
+        kind: "subscription-created",
+        planCode: plan.code,
+        subscriptionId: stripeSub.id,
+      },
+    });
+
     return {
       code: 201,
       success: true,

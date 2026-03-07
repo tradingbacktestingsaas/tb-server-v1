@@ -102,10 +102,27 @@ const PLAN_CAPABILITIES = {
 
 const resolvePlan = (user) => {
   const activeSub =
-    user.subscriptions.status === "active" ? user.subscriptions : null;
+    user?.subscriptions?.status === "active" ? user.subscriptions : null;
   const planName = activeSub?.plan?.code?.toUpperCase() || "FREE";
   const caps = PLAN_CAPABILITIES[planName] || PLAN_CAPABILITIES.FREE;
   return { planName, caps };
+};
+
+const getTradeEventDate = (trade) => {
+  if (!trade) return null;
+  return trade.closeDate || trade.openDate || null;
+};
+
+const getTradeSyncEventDate = (trade) => {
+  if (!trade) return null;
+  return (
+    trade.close_time ||
+    trade.closeDate ||
+    trade.closed_at ||
+    trade.open_time ||
+    trade.openDate ||
+    null
+  );
 };
 
 /* ======================================================
@@ -132,30 +149,38 @@ class FreeDashboardStrategy extends DashboardStrategy {
 
   async execute() {
     try {
-      const accountIds = this.user.tradeAccounts?.map((a) => a.id) || [];
+      const allTradeAccounts = this.user.tradeAccounts || [];
+      const requestedAccountId = this.q.accountId || this.q.account_id;
+
+      const selectedAccounts = requestedAccountId
+        ? allTradeAccounts.filter((a) => a.id === requestedAccountId)
+        : allTradeAccounts;
+
+      const accountIds = selectedAccounts.map((a) => a.id);
+      const accountNumbers = selectedAccounts
+        .map((a) => a.account_no)
+        .filter(Boolean);
 
       if (!accountIds.length) {
         return this.emptyResponse(false);
       }
 
-      const hasRange = !!this.q.range;
+      const requestedRange = this.q.range || "1w";
+      const hasCustomRange =
+        requestedRange === "range" && !!this.q.start && !!this.q.end;
 
       /* ======================================================
        TOTALS (ALL TIME UNLESS RANGE PROVIDED)
     ====================================================== */
 
       const totalsWhere = {
-        accountId: { [Op.in]: accountIds },
+        [Op.or]: [
+          { accountId: { [Op.in]: accountIds } },
+          ...(accountNumbers.length
+            ? [{ accountNumber: { [Op.in]: accountNumbers } }]
+            : []),
+        ],
       };
-
-      if (hasRange) {
-        const { startUTC, endUTC } = buildRange(this.q.range, this.q);
-
-        totalsWhere.closeDate = {
-          [Op.gte]: startUTC,
-          [Op.lte]: endUTC,
-        };
-      }
 
       const { rows: totalTradesRows = [], count = 0 } =
         await Trade.findAndCountAll({
@@ -168,21 +193,49 @@ class FreeDashboardStrategy extends DashboardStrategy {
        - Otherwise → default 1 week
     ====================================================== */
 
-      const { startUTC, endUTC } = hasRange
-        ? buildRange(this.q.range, this.q)
-        : buildRange("1w");
+      const safeRangeType = ["today", "1w", "1m", "range"].includes(
+        requestedRange,
+      )
+        ? requestedRange
+        : "1w";
+
+      const { startUTC, endUTC } = hasCustomRange
+        ? buildRange("range", this.q)
+        : buildRange(safeRangeType);
 
       const chartWhere = {
-        accountId: { [Op.in]: accountIds },
-        closeDate: {
-          [Op.gte]: startUTC,
-          [Op.lte]: endUTC,
-        },
+        [Op.and]: [
+          {
+            [Op.or]: [
+              { accountId: { [Op.in]: accountIds } },
+              ...(accountNumbers.length
+                ? [{ accountNumber: { [Op.in]: accountNumbers } }]
+                : []),
+            ],
+          },
+          {
+            [Op.or]: [
+              {
+                closeDate: {
+                  [Op.gte]: startUTC,
+                  [Op.lte]: endUTC,
+                },
+              },
+              {
+                closeDate: null,
+                openDate: {
+                  [Op.gte]: startUTC,
+                  [Op.lte]: endUTC,
+                },
+              },
+            ],
+          },
+        ],
       };
 
       const chartTrades = await Trade.findAll({
         where: chartWhere,
-        order: [["closeDate", "ASC"]],
+        order: [["closeDate", "DESC"], ["openDate", "DESC"]],
       });
 
       /* ======================================================
@@ -232,9 +285,14 @@ class FreeDashboardStrategy extends DashboardStrategy {
        BUILD AREA CHART (BASED ON chartTrades)
     ====================================================== */
 
-      for (const trade of chartTrades) {
+      const chartSourceTrades = chartTrades.length
+        ? chartTrades
+        : totalTradesRows;
+
+      for (const trade of chartSourceTrades) {
         const profit = Number(trade.profit ?? 0);
-        const closeDate = trade.closeDate ? new Date(trade.closeDate) : null;
+        const eventDateRaw = getTradeEventDate(trade);
+        const closeDate = eventDateRaw ? new Date(eventDateRaw) : null;
 
         if (!closeDate) continue;
 
@@ -288,9 +346,21 @@ class FreeDashboardStrategy extends DashboardStrategy {
         count: values.count,
       }));
 
+      // If range has no rows, still provide latest trades preview from totals dataset.
+      const tradesPreviewSource = totalTradesRows;
+
+      const tradesPreview = [...tradesPreviewSource]
+        .sort((a, b) => {
+          const aDate = new Date(getTradeEventDate(a) || 0).getTime();
+          const bDate = new Date(getTradeEventDate(b) || 0).getTime();
+          return bDate - aDate;
+        })
+        .slice(0, 10);
+
       return {
         mode: "user",
         plan: this.planName,
+        accountType: "free",
 
         totals: {
           totalTrades: safeCount,
@@ -312,7 +382,7 @@ class FreeDashboardStrategy extends DashboardStrategy {
           plAreaChart,
         },
 
-        trades: chartTrades.slice(0, 10),
+        trades: tradesPreview,
 
         range: {
           start: startUTC,
@@ -332,6 +402,7 @@ class FreeDashboardStrategy extends DashboardStrategy {
     return {
       mode: "user",
       plan: this.planName,
+      accountType: "free",
       totals: {
         totalTrades: 0,
         totalTradesPastWeek: 0,
@@ -374,7 +445,9 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
   }
 
   async execute() {
-    const hasRange = !!this.q.range;
+    const requestedRange = this.q.range || "1w";
+    const hasCustomRange =
+      requestedRange === "range" && !!this.q.start && !!this.q.end;
 
     /* =========================================
        FETCH ALL TRADES (PAGINATED)
@@ -414,9 +487,16 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
        FILTER CLOSED TRADES
     ========================================= */
 
-    const closedTrades = allTrades.filter(
-      (t) => t.state === "closed" && t.close_time,
-    );
+    const closedTrades = allTrades.filter((t) => {
+      const state = String(t.state || t.status || "").toLowerCase();
+      const hasEventTime = !!getTradeSyncEventDate(t);
+
+      // Keep compatibility with varying TradeSync payload formats.
+      if (!hasEventTime) return false;
+      if (!state) return true;
+
+      return ["closed", "close", "filled", "done"].includes(state);
+    });
 
     /* =========================================
        TOTALS (LIFETIME OR RANGE)
@@ -424,11 +504,11 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
 
     let totalsTrades = closedTrades;
 
-    if (hasRange) {
-      const { startUTC, endUTC } = buildRange(this.q.range, this.q);
+    if (hasCustomRange) {
+      const { startUTC, endUTC } = buildRange("range", this.q);
 
       totalsTrades = closedTrades.filter((t) => {
-        const close = new Date(t.close_time);
+        const close = new Date(getTradeSyncEventDate(t));
         return close >= startUTC && close <= endUTC;
       });
     }
@@ -438,17 +518,37 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
       (sum, t) => sum + (Number(t.profit) || 0),
       0,
     );
+    const totalWins = totalsTrades.filter((t) => Number(t.profit || 0) > 0).length;
+    const totalLossTrades = totalsTrades.filter(
+      (t) => Number(t.profit || 0) < 0,
+    ).length;
+    const grossProfit = totalsTrades
+      .filter((t) => Number(t.profit || 0) > 0)
+      .reduce((sum, t) => sum + Number(t.profit || 0), 0);
+    const grossLoss = totalsTrades
+      .filter((t) => Number(t.profit || 0) < 0)
+      .reduce((sum, t) => sum + Math.abs(Number(t.profit || 0)), 0);
+    const winRate = totalTrades ? (totalWins / totalTrades) * 100 : 0;
+    const profitFactor =
+      grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999 : 0;
+    const avgProfitPerTrade = totalTrades ? netProfit / totalTrades : 0;
 
     /* =========================================
        CHART RANGE (DEFAULT 1W)
     ========================================= */
 
-    const { startUTC, endUTC } = hasRange
-      ? buildRange(this.q.range, this.q)
-      : buildRange("1w");
+    const safeRangeType = ["today", "1w", "1m", "range"].includes(
+      requestedRange,
+    )
+      ? requestedRange
+      : "1w";
+
+    const { startUTC, endUTC } = hasCustomRange
+      ? buildRange("range", this.q)
+      : buildRange(safeRangeType);
 
     const chartTrades = closedTrades.filter((t) => {
-      const close = new Date(t.close_time);
+      const close = new Date(getTradeSyncEventDate(t));
       return close >= startUTC && close <= endUTC;
     });
 
@@ -482,10 +582,11 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
     ========================================= */
 
     const dayMap = {};
+    const chartSourceTrades = chartTrades.length ? chartTrades : totalsTrades;
 
-    for (const t of chartTrades) {
+    for (const t of chartSourceTrades) {
       const profit = Number(t.profit ?? 0);
-      const label = new Date(t.close_time).toISOString().slice(0, 10);
+      const label = new Date(getTradeSyncEventDate(t)).toISOString().slice(0, 10);
 
       if (!dayMap[label]) {
         dayMap[label] = { profit: 0, loss: 0, count: 0 };
@@ -504,19 +605,38 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
       count: values.count,
     }));
 
+    const tradesPreview = [...totalsTrades]
+      .sort((a, b) => {
+        const aDate = new Date(getTradeSyncEventDate(a) || 0).getTime();
+        const bDate = new Date(getTradeSyncEventDate(b) || 0).getTime();
+
+        return bDate - aDate;
+      })
+      .slice(0, 10);
+
     /* =========================================
        FETCH ANALYSES
     ========================================= */
 
     const analyses = await this.fetchAnalyses(startUTC, endUTC);
+    const analysesTotals = await this.fetchAnalysesTotals();
 
     return {
       mode: "user",
       plan: this.planName,
+      accountType: "synced",
 
       totals: {
         totalTrades,
+        winRate: +winRate.toFixed(2),
+        totalWins,
+        totalLossTrades,
+        totalProfit: +grossProfit.toFixed(2),
+        totalLoss: +grossLoss.toFixed(2),
         netProfit: +netProfit.toFixed(2),
+        profitFactor: +profitFactor.toFixed(2),
+        avgProfitPerTrade: +avgProfitPerTrade.toFixed(2),
+        ...(analysesTotals || {}),
       },
 
       charts: {
@@ -524,9 +644,11 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
         plAreaChart,
       },
 
-      insights: this.buildInsights(analyses),
+      analyses,
 
-      trades: chartTrades.slice(0, 10),
+      insights: this.buildInsights(analyses, totalsTrades),
+
+      trades: tradesPreview,
 
       range: {
         start: startUTC,
@@ -542,14 +664,62 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
      INSIGHTS ENGINE
   ========================================= */
 
-  buildInsights(analyses) {
+  buildInsights(analyses, trades = []) {
     const { monthlies = [], dailies = [] } = analyses;
 
     if (!monthlies.length && !dailies.length) {
+      if (!trades.length) {
+        return {
+          trend: "neutral",
+          performanceSignal: "neutral",
+          message: "No data available",
+        };
+      }
+
+      const monthlyMap = new Map();
+      let positiveTrades = 0;
+
+      for (const trade of trades) {
+        const profit = Number(trade.profit || 0);
+        const eventDate = new Date(getTradeSyncEventDate(trade));
+
+        if (!Number.isFinite(eventDate.getTime())) {
+          continue;
+        }
+
+        if (profit > 0) positiveTrades += 1;
+
+        const key = `${eventDate.getUTCFullYear()}-${String(
+          eventDate.getUTCMonth() + 1,
+        ).padStart(2, "0")}`;
+
+        monthlyMap.set(key, (monthlyMap.get(key) || 0) + profit);
+      }
+
+      const months = [...monthlyMap.entries()].sort((a, b) =>
+        a[0].localeCompare(b[0]),
+      );
+
+      let trend = "neutral";
+      if (months.length >= 2) {
+        const prev = months[months.length - 2][1];
+        const last = months[months.length - 1][1];
+        if (last > prev) trend = "trend_up";
+        else if (last < prev) trend = "trend_down";
+      }
+
+      const winRate = trades.length ? (positiveTrades / trades.length) * 100 : 0;
+
+      let performanceSignal = "neutral";
+      if (trend === "trend_up" && winRate >= 55) performanceSignal = "improving";
+      else if (trend === "trend_down" && winRate < 50)
+        performanceSignal = "weakening";
+
       return {
-        trend: "neutral",
-        performanceSignal: "neutral",
-        message: "No data available",
+        trend,
+        performanceSignal,
+        winMomentum: +winRate.toFixed(2),
+        message: "Insights generated from trade history",
       };
     }
 
@@ -605,7 +775,6 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
       winMomentum: +winMomentum.toFixed(2),
       monthsAnalyzed: monthlies.length,
       daysAnalyzed: dailies.length,
-      summary: analyses.summary,
     };
   }
 
@@ -659,7 +828,28 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
       return { monthlies, dailies };
     } catch (error) {
       console.error("TradeSync analyses error:", error.message);
-      return { monthlies: [], dailies: [] };
+      return {
+        monthlies: [],
+        dailies: [],
+      };
+    }
+  }
+
+  async fetchAnalysesTotals() {
+    try {
+      const response = await axios.get(
+        `https://api.tradesync.com/analyses/${this.account.tradesyncId}`,
+        { auth: tradesyncAuth },
+      );
+
+      if (response.data?.data) {
+        return response.data.data;
+      }
+
+      return null;
+    } catch (error) {
+      console.error("TradeSync analyses totals error:", error.message);
+      return null;
     }
   }
 }

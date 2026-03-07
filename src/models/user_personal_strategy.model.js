@@ -17,7 +17,11 @@ const UserPersonalStrategy = sequelize.define(
       type: DataTypes.STRING(255),
       allowNull: false,
     },
-    comment: {
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    content: {
       type: DataTypes.TEXT,
       allowNull: true,
     },

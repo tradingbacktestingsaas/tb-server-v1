@@ -8,7 +8,8 @@ router.get("/get", tradeController.getTrades);
 router.get("/journal", tradeController.getTradeJournal);
 router.post("/update", tradeController.updateTrade);
 router.delete("/delete/:id", tradeController.deleteTrade);
-router.delete("/bulk-delete", tradeController.bulkDeleteTrade);
+router.post("/bulk-delete", tradeController.bulkDeleteTrade);
 router.post("/bulk-create", tradeController.bulkCreateTrade);
 
 export default router;
+    

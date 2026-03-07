@@ -1,13 +1,55 @@
 import UserPersonalStrategy from "../models/user_personal_strategy.model.js";
 import { Op } from "sequelize";
 
+const normalizeStrategyText = (value) => {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  return String(value);
+};
+
+const applyStrategyTextPayload = (payload) => {
+  const hasContent = Object.prototype.hasOwnProperty.call(payload, "content");
+  const hasDescription = Object.prototype.hasOwnProperty.call(
+    payload,
+    "description",
+  );
+  const hasComment = Object.prototype.hasOwnProperty.call(payload, "comment");
+
+  if (hasContent) {
+    payload.content = normalizeStrategyText(payload.content);
+  }
+
+  if (hasDescription) {
+    payload.description = normalizeStrategyText(payload.description);
+  }
+
+  // Backward compatibility for legacy clients still sending "comment".
+  if (hasComment && !hasContent) {
+    payload.content = normalizeStrategyText(payload.comment);
+  }
+
+  delete payload.comment;
+};
+
 export async function createUserPersonalStrategy(strategyDetails) {
   try {
-    if (!strategyDetails.user_id) {
+    const payload = { ...strategyDetails };
+
+    if (!payload.user_id) {
       throw new Error("user_id is required");
     }
 
-    const strategy = await UserPersonalStrategy.create(strategyDetails);
+    applyStrategyTextPayload(payload);
+
+    delete payload.cover_img;
+
+    const strategy = await UserPersonalStrategy.create(payload);
     if (!strategy) {
       throw new Error("User Personal Strategy not created");
     }
@@ -126,7 +168,6 @@ export async function getUserPersonalStrategyById(id) {
 export async function updateUserPersonalStrategy(strategyDetails) {
   try {
     const { id, ...updateData } = strategyDetails;
-    console.log(updateData);
 
     if (!id) {
       throw new Error("Strategy ID is required");
@@ -142,8 +183,11 @@ export async function updateUserPersonalStrategy(strategyDetails) {
       };
     }
 
+    applyStrategyTextPayload(updateData);
+
     // Prevent user_id modification
     delete updateData.user_id;
+    delete updateData.cover_img;
 
     await strategy.update(updateData);
 

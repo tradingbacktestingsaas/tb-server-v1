@@ -498,10 +498,15 @@ const handleStripeEvents = async (event) => {
 
           await createNotification({
             userId: user.id,
-            title: "Your subscription ist started!",
+            title: "Subscription started",
             type: "alert",
             message:
               "Your subscription is now active. You can start connecting your live accounts.",
+            data: {
+              kind: "subscription-created",
+              subscriptionId,
+              planCode: plan.code,
+            },
           });
         } catch (e) {
           console.error("createFreeTradeAcc failed:", e?.message || e);

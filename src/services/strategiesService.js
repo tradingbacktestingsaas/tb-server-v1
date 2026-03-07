@@ -8,17 +8,134 @@ import User from "../models/user.model.js";
 import PurchasedStrategies from "../models/purchased_strategies.model.js";
 import Plan from "../models/plan.model.js";
 import { createNotification } from "./notificationService.js";
+import { deleteImage, uploadImage } from "../lib/image-kit/index.js";
+
+const parseBase64Image = (base64Value) => {
+  if (!base64Value || typeof base64Value !== "string") {
+    return null;
+  }
+
+  const dataUrlMatch = base64Value.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+
+  if (dataUrlMatch) {
+    return {
+      mimeType: dataUrlMatch[1],
+      base64Data: dataUrlMatch[2],
+    };
+  }
+
+  return {
+    mimeType: "image/jpeg",
+    base64Data: base64Value,
+  };
+};
+
+const mimeTypeToExtension = (mimeType = "image/jpeg") => {
+  const extensionMap = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+  };
+
+  return extensionMap[mimeType.toLowerCase()] || "jpg";
+};
+
+const normalizeStrategyText = (value) => {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  return String(value);
+};
+
+const applyStrategyTextPayload = (payload) => {
+  const hasContent = Object.prototype.hasOwnProperty.call(payload, "content");
+  const hasDescription = Object.prototype.hasOwnProperty.call(
+    payload,
+    "description",
+  );
+  const hasComment = Object.prototype.hasOwnProperty.call(payload, "comment");
+
+  if (hasContent) {
+    payload.content = normalizeStrategyText(payload.content);
+  }
+
+  if (hasDescription) {
+    payload.description = normalizeStrategyText(payload.description);
+  }
+
+  // Backward compatibility for legacy clients that still send "comment".
+  if (hasComment && !hasContent) {
+    payload.content = normalizeStrategyText(payload.comment);
+  }
+
+  delete payload.comment;
+};
+
+const toStrategyResponse = (strategy) => {
+  if (!strategy) {
+    return strategy;
+  }
+
+  const data = typeof strategy.toJSON === "function" ? strategy.toJSON() : strategy;
+
+  delete data.comment;
+
+  return data;
+};
+
+const uploadStrategyCoverFromPayload = async (coverImg) => {
+  const parsedImage = parseBase64Image(coverImg);
+
+  if (!parsedImage?.base64Data) {
+    throw new Error("Invalid cover_img format. Expected base64 image data");
+  }
+
+  const fileBuffer = Buffer.from(parsedImage.base64Data, "base64");
+
+  if (!fileBuffer.length) {
+    throw new Error("Invalid cover_img. Unable to decode image");
+  }
+
+  const extension = mimeTypeToExtension(parsedImage.mimeType);
+  const fileName = `strategy-cover-${Date.now()}.${extension}`;
+  const uploadedCover = await uploadImage(fileBuffer, fileName, "strategies");
+
+  if (!uploadedCover?.url || !uploadedCover?.fileId) {
+    throw new Error("Cover image upload failed");
+  }
+
+  return uploadedCover;
+};
 
 export async function createStrategies(strategiesDetails) {
   try {
-    const strategies = await Strategies.create(strategiesDetails);
+    const payload = { ...strategiesDetails };
+
+    applyStrategyTextPayload(payload);
+
+    if (payload.cover_img) {
+      const uploadedCover = await uploadStrategyCoverFromPayload(payload.cover_img);
+      payload.cover_url = uploadedCover.url;
+      payload.cover_id = uploadedCover.fileId;
+    }
+
+    delete payload.cover_img;
+
+    const strategies = await Strategies.create(payload);
     if (!strategies) {
       throw new Error("Strategies not created");
     }
     return {
       code: 201,
       message: "Strategies created successfully",
-      data: strategies,
+      data: toStrategyResponse(strategies),
       success: true,
     };
   } catch (error) {
@@ -42,7 +159,8 @@ export async function getStrategies(query = {}, authUserId = null) {
     } = query;
 
     const { id, status, type, isPremium, byUserId } = filters;
-
+    console.log(id,status,type,authUserId);
+    
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
     const offset = (pageNum - 1) * limitNum;
@@ -194,7 +312,8 @@ export async function getStrategies(query = {}, authUserId = null) {
             attributes: [
               "id",
               "title",
-              "comment",
+                "description",
+              "content",
               "status",
               "type",
               "isPremium",
@@ -214,7 +333,7 @@ export async function getStrategies(query = {}, authUserId = null) {
     ============================================================ */
 
     const data = rows.map((strategy) => {
-      const json = strategy.toJSON();
+      const json = toStrategyResponse(strategy);
       json.isPurchased = purchasedSet.has(json.id);
       return json;
     });
@@ -318,7 +437,8 @@ export async function getPurchasedStrategies(query = {}, authUserId = null) {
         attributes: [
           "id",
           "title",
-          "comment",
+          "description",
+          "content",
           "status",
           "type",
           "isPremium",
@@ -352,11 +472,21 @@ export async function getPurchasedStrategies(query = {}, authUserId = null) {
        6️⃣ Response
     ============================================================ */
 
+    const data = rows.map((row) => {
+      const json = row.toJSON();
+
+      if (json.strategiesInfo) {
+        json.strategiesInfo = toStrategyResponse(json.strategiesInfo);
+      }
+
+      return json;
+    });
+
     return {
       code: 200,
       success: true,
       message: "Purchased strategies fetched successfully",
-      data: rows,
+      data,
       pagination: {
         total: count,
         page: pageNum,
@@ -381,7 +511,8 @@ export async function getUserPurchasedStrategies(userId) {
           attributes: [
             "id",
             "title",
-            "comment",
+            "description",
+            "content",
             "status",
             "type",
             "isPremium",
@@ -394,11 +525,21 @@ export async function getUserPurchasedStrategies(userId) {
       order: [["created_at", "DESC"]],
     });
 
+    const data = strategies.map((entry) => {
+      const json = entry.toJSON();
+
+      if (json.strategiesInfo) {
+        json.strategiesInfo = toStrategyResponse(json.strategiesInfo);
+      }
+
+      return json;
+    });
+
     return {
       code: 200,
       success: true,
       message: "User purchased strategies fetched successfully",
-      data: strategies,
+      data,
     };
   } catch (error) {
     console.error("Error in getUserPurchasedStrategies:", error);
@@ -533,16 +674,50 @@ export async function updateStrategies(body) {
         success: false,
       };
     }
-    const strategies = await Strategies.update(body, {
-      where: { id: body.id },
-    });
-    if (!strategies) {
+
+    const strategy = await Strategies.findByPk(body.id);
+    if (!strategy) {
+      return {
+        code: 404,
+        message: "Strategy not found",
+        success: false,
+      };
+    }
+
+    const updatePayload = { ...body };
+
+    applyStrategyTextPayload(updatePayload);
+
+    if (updatePayload.cover_img) {
+      const uploadedCover = await uploadStrategyCoverFromPayload(
+        updatePayload.cover_img,
+      );
+
+      if (strategy.cover_id) {
+        try {
+          await deleteImage(strategy.cover_id);
+        } catch (error) {
+          console.error("Failed to delete old strategy cover:", error);
+        }
+      }
+
+      updatePayload.cover_url = uploadedCover.url;
+      updatePayload.cover_id = uploadedCover.fileId;
+    }
+
+    delete updatePayload.cover_img;
+    delete updatePayload.id;
+
+    await strategy.update(updatePayload);
+
+    if (!strategy) {
       throw new Error("Strategies not updated");
     }
+
     return {
       code: 200,
       message: "Strategies updated successfully",
-      data: strategies,
+      data: toStrategyResponse(strategy),
       success: true,
     };
   } catch (error) {
@@ -674,17 +849,29 @@ export async function buyStrategy(body) {
     };
 
     const order = await Order.create(orderPayload);
-    await createNotification({
-      userId: order.userId,
-      title: "Your subscription ist started!",
-      type: "alert",
-      message:
-        "Your subscription is now active. You can start connecting your live accounts.",
-    });
-    const purchasedStrategy = await PurchasedStrategies.create({
-      userId: user.id,
-      strategyId: strategy.id,
-    });
+
+    if (isPaid) {
+      await createNotification({
+        userId: order.userId,
+        title: "Strategy purchased",
+        type: "alert",
+        message: `You have successfully purchased \"${strategy.title}\".`,
+        data: {
+          kind: "strategy-purchased",
+          strategyId: strategy.id,
+          orderId: order.id,
+        },
+      });
+    }
+
+    let purchasedStrategy = null;
+
+    if (isPaid) {
+      purchasedStrategy = await PurchasedStrategies.create({
+        userId: user.id,
+        strategyId: strategy.id,
+      });
+    }
 
     return {
       code: 200,
