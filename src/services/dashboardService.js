@@ -4,6 +4,8 @@ import axios from "axios";
 import User from "../models/user.model.js";
 import Order from "../models/order.model.js";
 import Trade from "../models/trade.model.js";
+import Feedback from "../models/feedback.model.js";
+import BugReport from "../models/bug_report.model.js";
 import UserSubscription from "../models/user_subscription.model.js";
 import TradeAccount from "../models/trade_account.model.js";
 import Plan from "../models/plan.model.js";
@@ -74,6 +76,7 @@ const buildRange = (rangeType, q = {}) => {
       endUTC = endOfDayUTC(new Date(q.end));
       break;
 
+    case "7d":
     case "1w":
     default:
       const wStart = new Date(now);
@@ -84,6 +87,45 @@ const buildRange = (rangeType, q = {}) => {
   }
 
   return { startUTC, endUTC };
+};
+
+const buildDayLabels = (startUTC, endUTC) => {
+  const labels = [];
+  const cursor = new Date(startUTC);
+
+  while (cursor <= endUTC) {
+    labels.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return labels;
+};
+
+const buildCountChart = (records, startUTC, endUTC) => {
+  const labels = buildDayLabels(startUTC, endUTC);
+  const dayCountMap = Object.create(null);
+
+  for (const label of labels) {
+    dayCountMap[label] = 0;
+  }
+
+  for (const item of records) {
+    const rawDate = item?.createdAt;
+    if (!rawDate) continue;
+
+    const date = new Date(rawDate);
+    if (date < startUTC || date > endUTC) continue;
+
+    const label = date.toISOString().slice(0, 10);
+    if (Object.prototype.hasOwnProperty.call(dayCountMap, label)) {
+      dayCountMap[label] += 1;
+    }
+  }
+
+  return labels.map((label) => ({
+    label,
+    count: dayCountMap[label] || 0,
+  }));
 };
 
 /* ======================================================
@@ -434,7 +476,6 @@ class FreeDashboardStrategy extends DashboardStrategy {
 /* ======================================================
    TRADESYNC STRATEGY
 ====================================================== */
-
 class TradeSyncDashboardStrategy extends DashboardStrategy {
   constructor(account, q, planName, caps) {
     super();
@@ -857,24 +898,108 @@ class TradeSyncDashboardStrategy extends DashboardStrategy {
 /* ======================================================
    ADMIN STRATEGY
 ====================================================== */
-
 class AdminDashboardStrategy extends DashboardStrategy {
+  constructor(q) {
+    super();
+    this.q = q;
+  }
+
   async execute() {
-    const [totalUsers, totalTrades, totalOrders, totalActiveSubscriptions] =
-      await Promise.all([
-        User.count(),
-        Trade.count(),
-        Order.count(),
-        UserSubscription.count({ where: { status: "active" } }),
-      ]);
+    const requestedRange = this.q?.range || "1w";
+    const hasCustomRange =
+      requestedRange === "range" && !!this.q?.start && !!this.q?.end;
+
+    const safeRangeType = ["today", "7d", "1w", "1m", "range"].includes(
+      requestedRange,
+    )
+      ? requestedRange
+      : "1w";
+
+    const { startUTC, endUTC } = hasCustomRange
+      ? buildRange("range", this.q)
+      : buildRange(safeRangeType);
+
+    const createdAtWhere = {
+      createdAt: {
+        [Op.gte]: startUTC,
+        [Op.lte]: endUTC,
+      },
+    };
+
+    const [
+      totalUsers,
+      totalActiveSubscriptions,
+      totalFeedbacks,
+      totalBugs,
+      totalStudentUsers,
+      usersData,
+      feedbacksData,
+      bugsData,
+    ] = await Promise.all([
+      User.count(),
+      UserSubscription.count({ where: { status: "active" } }),
+      Feedback.count(),
+      BugReport.count(),
+      User.count({ where: { type: "student" } }),
+      User.findAll({
+        attributes: [
+          "id",
+          "firstName",
+          "lastName",
+          "email",
+          "type",
+          "createdAt",
+        ],
+        where: createdAtWhere,
+        order: [["createdAt", "DESC"]],
+      }),
+      Feedback.findAll({
+        attributes: ["id", "userId", "title", "category", "status", "createdAt"],
+        where: createdAtWhere,
+        order: [["createdAt", "DESC"]],
+      }),
+      BugReport.findAll({
+        attributes: [
+          "id",
+          "userId",
+          "title",
+          "category",
+          "priority",
+          "status",
+          "createdAt",
+        ],
+        where: createdAtWhere,
+        order: [["createdAt", "DESC"]],
+      }),
+    ]);
+
+    const usersChart = buildCountChart(usersData, startUTC, endUTC);
+    const feedbacksChart = buildCountChart(feedbacksData, startUTC, endUTC);
+    const bugsChart = buildCountChart(bugsData, startUTC, endUTC);
 
     return {
       mode: "admin",
       totals: {
         totalUsers,
-        totalTrades,
-        totalOrders,
         totalActiveSubscriptions,
+        totalFeedbacks,
+        totalBugs,
+        totalStudentUsers,
+      },
+      charts: {
+        users: usersChart,
+        feedbacks: feedbacksChart,
+        bugs: bugsChart,
+      },
+      datasets: {
+        users: usersData,
+        feedbacks: feedbacksData,
+        bugs: bugsData,
+      },
+      range: {
+        type: hasCustomRange ? "range" : safeRangeType,
+        start: startUTC,
+        end: endUTC,
       },
     };
   }
@@ -889,7 +1014,7 @@ class DashboardContext {
     const role = String(user.role || "").toLowerCase();
 
     if (role.includes("admin")) {
-      return new AdminDashboardStrategy();
+      return new AdminDashboardStrategy(q);
     }
 
     const { planName, caps } = resolvePlan(user);

@@ -42,6 +42,20 @@ const getUserById = async (req, res) => {
   }
 };
 
+const getCompleteUserById = async (req, res) => {
+  try {
+    const user = await usersService.getCompleteUserById(req.params.id);
+    return res.status(201).json(user);
+  } catch (error) {
+    return res.status(400).json({
+      code: 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+
 const bulkCreateUsers = async (req, res) => {
   try {
     const user = await usersService.bulkCreateUsers(req.body);
@@ -139,4 +153,5 @@ export const usersController = {
   updateUser,
   changePassword,
   uploadAvatar,
+  getCompleteUserById
 };

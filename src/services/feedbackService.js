@@ -5,6 +5,12 @@ import { Op } from "sequelize";
 export async function createFeedback(data) {
   try {
     const feedback = await Feedback.create(data);
+
+    await User.update(
+      { is_feedback_completed: true },
+      { where: { id: feedback.userId } },
+    );
+
     return {
       code: 201,
       success: true,
