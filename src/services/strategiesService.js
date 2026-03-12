@@ -216,14 +216,15 @@ export async function getStrategies(query = {}, authUserId = null) {
       });
 
       userRole = user?.role || null;
-      isAdmin = userRole === "admin";
+      isAdmin = userRole?.toLowerCase() === "admin";
+      if(!isAdmin){
 
-      const activeSub =
-        user.subscriptions.status === "active" ? user.subscriptions : null;
-      userPlan = activeSub?.plan?.code?.toUpperCase() || "FREE";
-      console.log(user);
-    }
-    console.log(userPlan);
+        const activeSub =
+          user.subscriptions.status === "active" ? user.subscriptions : null;
+        userPlan = activeSub?.plan?.code?.toUpperCase() || "FREE";
+        console.log(user);
+      }
+      } 
 
     const isElite = userPlan === "ELITE";
 
@@ -241,7 +242,7 @@ export async function getStrategies(query = {}, authUserId = null) {
     ============================== */
 
     if (isAdmin) {
-      if (status) where.status = status;
+      if (status) where.status ="active";
     } else {
       // Non-admin only sees active
       where.status = "active";
@@ -280,6 +281,11 @@ export async function getStrategies(query = {}, authUserId = null) {
       } else if (!isElite && type === "ADDON") {
         where.type = type;
       }
+    }
+
+    // Admins should not see PERSONAL strategies.
+    if (isAdmin) {
+      where[Op.and] = [...(where[Op.and] || []), { type: { [Op.ne]: "PERSONAL" } }];
     }
 
     /* ============================================================

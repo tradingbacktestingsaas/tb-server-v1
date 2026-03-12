@@ -27,6 +27,7 @@ export async function register(userDetail) {
     ...userDetail,
     email,
     type,
+    auth_provider: "local",
     password: passwordHash,
   });
   const token = generateToken(
@@ -72,6 +73,7 @@ export async function login({ email, password }) {
       "is_feedback_completed",
       "onboarding_completed",
       "is_verified",
+      "auth_provider",
       "updatedAt",
       "role",
       "plan",
@@ -96,6 +98,11 @@ export async function login({ email, password }) {
   if (!user) throw createError(401, "not-found");
   const match = await comparePassword(password, user.password);
   if (!match) throw createError(401, "invalid-password");
+
+  if (user.auth_provider !== "local") {
+    await user.update({ auth_provider: "local" });
+  }
+
   const token = generateToken(
     {
       sub: user.id,
@@ -186,6 +193,7 @@ export async function googleLogin({ credential }) {
       "is_feedback_completed",
       "onboarding_completed",
       "is_verified",
+      "auth_provider",
       "updatedAt",
       "role",
       "plan",
@@ -206,6 +214,10 @@ export async function googleLogin({ credential }) {
   });
 
   if (user && !user.blocked && user.is_verified) {
+    if (user.auth_provider !== "google") {
+      await user.update({ auth_provider: "google" });
+    }
+
     token = generateToken(
       {
         sub: user.id,
@@ -233,6 +245,8 @@ export async function googleLogin({ credential }) {
     email: email,
     password: passwordHash,
     avatar_url: picture,
+    auth_provider: "google",
+    is_verified: true,
   });
   token = generateToken(
     {

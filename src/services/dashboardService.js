@@ -9,6 +9,7 @@ import BugReport from "../models/bug_report.model.js";
 import UserSubscription from "../models/user_subscription.model.js";
 import TradeAccount from "../models/trade_account.model.js";
 import Plan from "../models/plan.model.js";
+import { newsService } from "./newsService.js";
 
 import config from "../config/env.js";
 
@@ -1071,11 +1072,33 @@ const getDashboard = async (q) => {
   const strategy = DashboardContext.resolveStrategy(user, q);
   const result = await strategy.execute();
 
+  let dashboardData = result;
+
+  if (result?.mode === "user") {
+    try {
+      const news = await newsService.getNews();
+      dashboardData = {
+        ...result,
+        news,
+      };
+    } catch (error) {
+      console.error("Dashboard news fetch error:", error.message);
+      dashboardData = {
+        ...result,
+        news: {
+          success: false,
+          message: "News fetch failed",
+          news: [],
+        },
+      };
+    }
+  }
+
   return {
     success: true,
     code: 200,
     message: "dashboard-found",
-    data: result,
+    data: dashboardData,
   };
 };
 

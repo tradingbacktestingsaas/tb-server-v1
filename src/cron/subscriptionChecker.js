@@ -3,7 +3,7 @@ import { Op } from "sequelize";
 import UserSubscription from "../models/user_subscription.model.js";
 import Plans from "../models/plan.model.js";
 import { createFreeSubscription } from "../services/subscriptionService.js";
-import { createNotification } from "../services/notificationService.js";
+import { sendSubscriptionUpdate } from "../services/subscriptionUpdateService.js";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -32,7 +32,7 @@ function startSubscriptionCron() {
 
         // Send reminder one week before expiry, with a 6-hour matching window.
         if (diffMs <= SEVEN_DAYS_MS && diffMs > SEVEN_DAYS_MS - SIX_HOURS_MS) {
-          await createNotification({
+          await sendSubscriptionUpdate({
             userId: sub.userId,
             title: "Subscription expiring in 7 days",
             type: "reminder",
@@ -52,7 +52,7 @@ function startSubscriptionCron() {
             planId: freePlan.id,
           });
 
-          await createNotification({
+          await sendSubscriptionUpdate({
             userId: sub.userId,
             title: "Subscription expired",
             type: "alert",

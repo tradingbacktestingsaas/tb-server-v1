@@ -8,7 +8,7 @@ import Plans from "../models/plan.model.js";
 import { createFreeTradeAcc } from "./tradeAccService.js";
 import TradeAccount from "../models/trade_account.model.js";
 import Coupon from "../models/coupon.model.js";
-import { createNotification } from "./notificationService.js";
+import { sendSubscriptionUpdate } from "./subscriptionUpdateService.js";
 
 // Initialize Stripe with the API key
 const stripe = new Stripe(config.stripe.secretKey);
@@ -496,7 +496,7 @@ const handleStripeEvents = async (event) => {
             });
           }
 
-          await createNotification({
+          await sendSubscriptionUpdate({
             userId: user.id,
             title: "Subscription started",
             type: "alert",
@@ -534,6 +534,21 @@ const handleStripeEvents = async (event) => {
             invoiceId: invoice.id,
             hostedInvoiceUrl: invoice.hosted_invoice_url || null,
           });
+
+          if (order.userId) {
+            await sendSubscriptionUpdate({
+              userId: order.userId,
+              title: "Subscription payment successful",
+              type: "info",
+              message:
+                "Your subscription payment was received successfully.",
+              data: {
+                kind: "subscription-payment-success",
+                subscriptionId,
+                invoiceId: invoice.id,
+              },
+            });
+          }
         }
       } catch (err) {
         console.error(
@@ -545,7 +560,35 @@ const handleStripeEvents = async (event) => {
     }
 
     case "invoice.payment_failed": {
-      console.log("⚠️ Payment failed:", event.data.object.id);
+      const invoice = event.data.object;
+      const subscriptionId = invoice.subscription;
+      console.log("⚠️ Payment failed:", invoice.id);
+
+      try {
+        const order = await Order.findOne({
+          where: { provider_sub_id: subscriptionId },
+        });
+
+        if (order?.userId) {
+          await sendSubscriptionUpdate({
+            userId: order.userId,
+            title: "Subscription payment failed",
+            type: "alert",
+            message:
+              "We could not process your subscription payment. Please update your payment method.",
+            data: {
+              kind: "subscription-payment-failed",
+              subscriptionId,
+              invoiceId: invoice.id,
+            },
+          });
+        }
+      } catch (err) {
+        console.error(
+          "Error handling invoice.payment_failed:",
+          err?.message || err
+        );
+      }
       break;
     }
 
@@ -561,6 +604,18 @@ const handleStripeEvents = async (event) => {
             status: "canceled",
             auto_renew: false,
             current_period_end: new Date(),
+          });
+
+          await sendSubscriptionUpdate({
+            userId: existing.userId,
+            title: "Subscription canceled",
+            type: "alert",
+            message:
+              "Your subscription has been canceled. You can resubscribe anytime from the plans page.",
+            data: {
+              kind: "subscription-canceled",
+              subscriptionId,
+            },
           });
         }
       } catch (err) {

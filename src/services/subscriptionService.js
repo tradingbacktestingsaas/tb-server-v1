@@ -8,7 +8,7 @@ import { Op, Sequelize, where } from "sequelize";
 import TradeAccount from "../models/trade_account.model.js";
 import Plan from "../models/plan.model.js";
 import Coupon from "../models/coupon.model.js";
-import { createNotification } from "./notificationService.js";
+import { sendSubscriptionUpdate } from "./subscriptionUpdateService.js";
 
 const validateCoupon = async (code, plan_code) => {
   const coupon = await Coupon.findOne({
@@ -98,6 +98,18 @@ export async function subscribe(subscriptionDetails) {
         status: "canceled",
         auto_renew: false,
         current_period_end: new Date(),
+      });
+
+      await sendSubscriptionUpdate({
+        userId: user.id,
+        title: "Previous subscription canceled",
+        type: "alert",
+        message:
+          "Your previous active subscription was canceled because you started a new plan.",
+        data: {
+          kind: "subscription-canceled",
+          subscriptionId: existingActive.provider_sub_id,
+        },
       });
     }
 
@@ -195,7 +207,7 @@ export async function subscribe(subscriptionDetails) {
     await Users.update({ plan: plan.code }, { where: { id: user.id } });
     await createFreeTradeAcc(user.id);
 
-    await createNotification({
+    await sendSubscriptionUpdate({
       userId: user.id,
       title: "Subscription created",
       type: "alert",
@@ -295,7 +307,7 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
       });
       if (cancelled) {
         await userSubscription.update(freeSubPayload);
-        await createNotification({
+        await sendSubscriptionUpdate({
           userId: user.id,
           title: "Downgraded to FREE plan",
           type: "alert",
@@ -312,7 +324,7 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
       }
     } else {
       userSubscription = await UserSubscription.create(freeSubPayload);
-      await createNotification({
+      await sendSubscriptionUpdate({
         userId: user.id,
         title: "Welcome to Trading Backtesting Platform",
         type: "alert",
