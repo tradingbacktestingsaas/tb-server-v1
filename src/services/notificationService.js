@@ -23,6 +23,7 @@ export async function getNotificationsById(options = {}) {
         "title",
         "message",
         "is_read",
+        "data",
         "viewed_at",
         "created_at",
       ],
@@ -65,7 +66,7 @@ export async function getUserNotificationsById(options = {}) {
         {
           model: Notification,
           as: "notificationInfo", // ✅ must match your association alias
-          attributes: ["id", "title", "message", "type", "created_at"],
+          attributes: ["id", "title", "message", "type", "created_at", "data"],
           where: notificationWhere,
         },
       ],
@@ -81,6 +82,7 @@ export async function getUserNotificationsById(options = {}) {
       title: row.notificationInfo.title,
       message: row.notificationInfo.message,
       type: row.notificationInfo.type,
+      data: row.notificationInfo.data,
       is_read: row.is_read,
       created_at: row.notificationInfo.created_at,
     }));
@@ -116,6 +118,7 @@ export async function createNotification(notificationDetail) {
         id: notification.id,
         title: notification.title,
         type: notification.type,
+        data: notification.data || null,
         message: notification.message,
       });
     }
@@ -142,6 +145,7 @@ export async function sendUserNotification(io, userId, notification) {
   emitEvent(io, `user:${userId}`, {
     title: notification.title,
     type: notification.type,
+    data: notification.data || null,
     message: notification.message,
     isRead: userNotif.isRead,
   });
@@ -191,7 +195,6 @@ export async function bulkCreateNotifications(notificationDetail) {
       returning: true,
       ignoreDuplicates: true,
     });
-    
 
     if (!notification) {
       throw new Error("notification not created");

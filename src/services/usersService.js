@@ -9,6 +9,25 @@ import UserSubscription from "../models/user_subscription.model.js";
 import Plan from "../models/plan.model.js";
 import Order from "../models/order.model.js";
 
+const serializeUserDetail = (user) => {
+  if (!user) return user;
+
+  const plainUser =
+    typeof user.get === "function" ? user.get({ plain: true }) : user;
+  const feedbackCompleted =
+    plainUser?.is_feedback_completed ??
+    plainUser?.feedback_is_completed ??
+    false;
+
+  return {
+    ...plainUser,
+    is_notifications_enabled: plainUser?.is_notifications_enabled ?? false,
+    is_update_enabled: plainUser?.is_update_enabled ?? false,
+    is_feedback_completed: feedbackCompleted,
+    feedback_is_completed: feedbackCompleted,
+  };
+};
+
 export async function getUsers(options = {}) {
   try {
     const {
@@ -76,7 +95,7 @@ export async function getUsers(options = {}) {
       whereClause.role = role;
     }
 
-    if(type){
+    if (type) {
       whereClause.type = type;
     }
 
@@ -114,6 +133,8 @@ export async function getUsers(options = {}) {
         "avatar_url",
         "type",
         "onboarding_completed",
+        "is_notifications_enabled",
+        "is_update_enabled",
         "is_feedback_completed",
         "auth_provider",
         "createdAt",
@@ -128,7 +149,7 @@ export async function getUsers(options = {}) {
     });
 
     return {
-      users: rows,
+      users: rows.map(serializeUserDetail),
       totalCount: count,
       page: parsedPage,
       limit: parsedLimit,
@@ -153,6 +174,9 @@ export async function uploadAvatar(userId, req) {
         "blocked",
         "avatar_url",
         "activeTradeAccountId",
+        "is_notifications_enabled",
+        "is_update_enabled",
+        "is_feedback_completed",
         "createdAt",
         "updatedAt",
         "role",
@@ -218,7 +242,7 @@ export async function uploadAvatar(userId, req) {
     await user.save();
     return {
       message: "Avatar uploaded successfully",
-      data: user,
+      data: serializeUserDetail(user),
       success: true,
     };
   } catch (error) {
@@ -242,6 +266,8 @@ export async function getUserById(userId) {
         "updatedAt",
         "type",
         "onboarding_completed",
+        "is_notifications_enabled",
+        "is_update_enabled",
         "is_feedback_completed",
         "auth_provider",
         "role",
@@ -297,7 +323,7 @@ export async function getUserById(userId) {
 
     return {
       message: "User fetched successfully",
-      data: { user: user },
+      data: { user: serializeUserDetail(user) },
       success: true,
     };
   } catch (error) {
@@ -321,6 +347,8 @@ export async function getCompleteUserById(userId) {
         "updatedAt",
         "type",
         "onboarding_completed",
+        "is_notifications_enabled",
+        "is_update_enabled",
         "is_feedback_completed",
         "auth_provider",
         "role",
@@ -388,7 +416,7 @@ export async function getCompleteUserById(userId) {
 
     return {
       message: "User fetched successfully",
-      data: { user: user },
+      data: { user: serializeUserDetail(user) },
       success: true,
     };
   } catch (error) {
@@ -496,7 +524,7 @@ const updateUser = async (userId, userDetail) => {
         blocked: user.blocked,
         type: "user",
       },
-      "1h"
+      "1h",
     );
 
     const payload = {
@@ -509,6 +537,10 @@ const updateUser = async (userId, userDetail) => {
       blocked: user.blocked,
       avatar_url: user.avatar_url,
       activeTradeAccountId: user.activeTradeAccountId,
+      is_notifications_enabled: user?.is_notifications_enabled ?? false,
+      is_update_enabled: user?.is_update_enabled ?? false,
+      is_feedback_completed: user?.is_feedback_completed ?? false,
+      feedback_is_completed: user?.is_feedback_completed ?? false,
     };
 
     return {

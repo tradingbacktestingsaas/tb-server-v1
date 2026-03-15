@@ -124,9 +124,10 @@ export async function login({ email, password }) {
     plan: user.plan,
     onboarding_completed: user.onboarding_completed,
     is_verified: user.is_verified,
-    is_notifications_enabled: user.is_notifications_enabled,
-    is_update_enabled: user.is_update_enabled,
-    is_feedback_completed: user.is_feedback_completed,
+    is_notifications_enabled: user?.is_notifications_enabled ?? false,
+    is_update_enabled: user?.is_update_enabled ?? false,
+    is_feedback_completed: user?.is_feedback_completed ?? false,
+    feedback_is_completed: user?.is_feedback_completed ?? false,
     blocked: user.blocked,
     avatar_url: user.avatar_url,
     tradeAccounts: user.tradeAccounts,
@@ -232,7 +233,13 @@ export async function googleLogin({ credential }) {
     return {
       success: true,
       message: "google-signin-successful",
-      data: user,
+      data: {
+        ...user.get({ plain: true }),
+        is_notifications_enabled: user?.is_notifications_enabled ?? false,
+        is_update_enabled: user?.is_update_enabled ?? false,
+        is_feedback_completed: user?.is_feedback_completed ?? false,
+        feedback_is_completed: user?.is_feedback_completed ?? false,
+      },
       token,
       code: 200,
     };
@@ -263,7 +270,13 @@ export async function googleLogin({ credential }) {
   return {
     success: true,
     message: "google-signin-successful",
-    data: newUser,
+    data: {
+      ...newUser.get({ plain: true }),
+      is_notifications_enabled: newUser?.is_notifications_enabled ?? false,
+      is_update_enabled: newUser?.is_update_enabled ?? false,
+      is_feedback_completed: newUser?.is_feedback_completed ?? false,
+      feedback_is_completed: newUser?.is_feedback_completed ?? false,
+    },
     token,
     code: 200,
   };

@@ -296,7 +296,8 @@ export async function getBrokers(req) {
 
 export async function switchTradeAcc({ userId, tradeAccId, type }) {
   const allowedTypes = ["FREE", "MT4", "MT5"];
-  const requestedType = typeof type === "string" ? type.toUpperCase().trim() : null;
+  const requestedType =
+    typeof type === "string" ? type.toUpperCase().trim() : null;
 
   try {
     if (!userId) throw new Error("userId is required");
@@ -332,15 +333,6 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
         throw new Error("Account type mismatch");
       }
 
-      if (tradeAcc.isActive) {
-        await t.commit();
-        return {
-          message: "Trade account switched successfully",
-          data: tradeAcc,
-          success: true,
-        };
-      }
-
       if (targetType === "MT4" || targetType === "MT5") {
         if (user.plan === "FREE") {
           throw new Error(
@@ -372,7 +364,6 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
         {
           where: {
             userId: user.id,
-            type: { [Op.in]: allowedTypes },
           },
           transaction: t,
         },
@@ -391,7 +382,6 @@ export async function switchTradeAcc({ userId, tradeAccId, type }) {
       await t.rollback();
       throw innerError;
     }
-
   } catch (err) {
     console.error("Error in switchTradeAcc:", err);
     throw new Error(`Failed to switch trade account: ${err.message}`);
@@ -529,14 +519,23 @@ export async function getTradeAccs(options = {}) {
 
     const activeSub =
       user.subscriptions.status === "active" ? user.subscriptions : null;
+    console.log("activeSub=========>", activeSub);
+
     const plan = activeSub?.plan || null;
 
     const planName = plan?.code?.toUpperCase() || "FREE";
+    console.log("PLAN=========>", plan?.dataValues?.features?.account_limit);
 
     const accountLimit =
       typeof plan?.features === "object"
         ? (plan.features?.account_limit ?? 0)
         : 0;
+
+    const currentAvailableSlots =
+      accountLimit -
+      (await TradeAcc.count({
+        where: { userId, type: { [Op.in]: ["MT4", "MT5"] } },
+      }));
 
     /* ============================= */
     /* BUILD WHERE FILTER */
@@ -655,7 +654,7 @@ export async function getTradeAccs(options = {}) {
       totalCount: count, // correct pagination count
       accountLimit,
       currentPlan: planName,
-      remainingSlots: Math.max(0, accountLimit - count),
+      remainingSlots: currentAvailableSlots,
     };
   } catch (error) {
     console.error("Error in getTradeAccs:", error);
@@ -888,6 +887,8 @@ export async function deleteTradeAcc(accId) {
 }
 
 export async function updateTradeAcc(accId, accDetails) {
+  console.log("ACCOUNT========>", accDetails);
+
   try {
     let encryptedPassword = null;
     const tradeAcc = await TradeAcc.findByPk(accId, {
@@ -916,7 +917,7 @@ export async function updateTradeAcc(accId, accDetails) {
         password: accDetails.investor_password, // depends on your naming
       };
 
-      console.log(payload);
+      console.log("TradeSync payload========>", payload);
       // Validation check
       if (!payload.broker_server_id || !payload.password) {
         console.warn("⚠️ Missing required fields for TradeSync update");

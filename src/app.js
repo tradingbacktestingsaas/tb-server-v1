@@ -28,7 +28,7 @@ import feedBackRoutes from "./routes/feedbackRoutes.js";
 import bugReportRoutes from "./routes/bugReportRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
 import DashboardRoutes from "./routes/dashboardRoute.js";
-import tradeSyncRoutes from "./routes/tradeSyncWebhook.js";
+import webhookRoute from "./routes/webhookRoute.js";
 import userPersonalStrategyRoutes from "./routes/userPersonalStrategyRoutes.js";
 import feedbackRoutes from "./routes/feedbackRoutes.js";
 
@@ -62,21 +62,18 @@ const corsOptions = {
     "Authorization",
     "X-recaptcha-token",
     "x-recaptcha-token",
+    "stripe-signature",
   ],
 };
-// app.use("/webhook", (req, res, next) => {
-//   if (req.originalUrl.startsWith("/webhook")) {
-//     next(); // skip global parsers
-//   } else {
-//     express.json()(req, res, next);
-//   }
-// });
+
 // Webhooks must come BEFORE global body parsers
-// app.use("/webhook", webhookRoute);
-app.use(express.json());
-app.use("/webhook", tradeSyncRoutes);
-// app.use(`/webhook`, webhookRoute);
+// Available endpoints:
+// - POST /public/api/v1/webhook/stripe
+// - POST /public/api/v1/webhook/tradesync
+app.use(`${globalPrefix}/webhook`, webhookRoute);
+
 // Global middlewares
+app.use(express.json());
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 app.use(cookieParser());

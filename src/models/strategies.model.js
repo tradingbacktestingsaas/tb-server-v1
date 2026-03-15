@@ -23,7 +23,7 @@ const Strategy = sequelize.define(
     },
     status: {
       type: DataTypes.STRING(50),
-      allowNull: true, // e.g., FREE, STANDARD, ELITE
+      allowNull: true, // Draft, Published, Archived
     },
     type: {
       type: DataTypes.STRING, // example enum values "scalping", "swing", "day", "longterm"
