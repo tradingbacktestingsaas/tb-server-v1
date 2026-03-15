@@ -29,6 +29,19 @@ const getStrategies = async (req, res) => {
   }
 };
 
+const getStrategyById = async (req, res) => {
+  try {
+    const strategy = await strategiesService.getStrategyById(req.params.id);
+    return res.status(strategy.code || 200).json(strategy);
+  } catch (error) {
+    return res.status(error.code || 500).json({
+      code: error.code || 500,
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
 const getPurchasedStrategies = async (req, res) => {
   try {
     // Extract auth user ID from req.user (set by auth middleware)
@@ -102,6 +115,7 @@ const bulkCreate = async (req, res) => {
 export const strategiesController = {
   createStrategies,
   getStrategies,
+  getStrategyById,
   getPurchasedStrategies,
   updateStrategies,
   deleteStrategies,

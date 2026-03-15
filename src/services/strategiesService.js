@@ -15,7 +15,9 @@ const parseBase64Image = (base64Value) => {
     return null;
   }
 
-  const dataUrlMatch = base64Value.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  const dataUrlMatch = base64Value.match(
+    /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/,
+  );
 
   if (dataUrlMatch) {
     return {
@@ -83,7 +85,8 @@ const toStrategyResponse = (strategy) => {
     return strategy;
   }
 
-  const data = typeof strategy.toJSON === "function" ? strategy.toJSON() : strategy;
+  const data =
+    typeof strategy.toJSON === "function" ? strategy.toJSON() : strategy;
 
   delete data.comment;
 
@@ -121,7 +124,9 @@ export async function createStrategies(strategiesDetails) {
     applyStrategyTextPayload(payload);
 
     if (payload.cover_img) {
-      const uploadedCover = await uploadStrategyCoverFromPayload(payload.cover_img);
+      const uploadedCover = await uploadStrategyCoverFromPayload(
+        payload.cover_img,
+      );
       payload.cover_url = uploadedCover.url;
       payload.cover_id = uploadedCover.fileId;
     }
@@ -159,8 +164,8 @@ export async function getStrategies(query = {}, authUserId = null) {
     } = query;
 
     const { id, status, type, isPremium, byUserId } = filters;
-    console.log(id,status,type,authUserId);
-    
+    console.log(id, status, type, authUserId);
+
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
     const offset = (pageNum - 1) * limitNum;
@@ -217,14 +222,21 @@ export async function getStrategies(query = {}, authUserId = null) {
 
       userRole = user?.role || null;
       isAdmin = userRole?.toLowerCase() === "admin";
-      if(!isAdmin){
+      if (!isAdmin) {
+        const subscriptions = Array.isArray(user?.subscriptions)
+          ? user.subscriptions
+          : user?.subscriptions
+            ? [user.subscriptions]
+            : [];
 
         const activeSub =
-          user.subscriptions.status === "active" ? user.subscriptions : null;
+          subscriptions.find(
+            (subscription) => subscription?.status === "active",
+          ) || null;
         userPlan = activeSub?.plan?.code?.toUpperCase() || "FREE";
         console.log(user);
       }
-      } 
+    }
 
     const isElite = userPlan === "ELITE";
 
@@ -242,10 +254,10 @@ export async function getStrategies(query = {}, authUserId = null) {
     ============================== */
 
     if (isAdmin) {
-      if (status) where.status ="active";
+      if (status) where.status = status || "published";
     } else {
       // Non-admin only sees active
-      where.status = "active";
+      where.status = "published";
     }
 
     /* =============================
@@ -285,7 +297,10 @@ export async function getStrategies(query = {}, authUserId = null) {
 
     // Admins should not see PERSONAL strategies.
     if (isAdmin) {
-      where[Op.and] = [...(where[Op.and] || []), { type: { [Op.ne]: "PERSONAL" } }];
+      where[Op.and] = [
+        ...(where[Op.and] || []),
+        { type: { [Op.ne]: "PERSONAL" } },
+      ];
     }
 
     /* ============================================================
@@ -318,7 +333,7 @@ export async function getStrategies(query = {}, authUserId = null) {
             attributes: [
               "id",
               "title",
-                "description",
+              "description",
               "content",
               "status",
               "type",
@@ -732,6 +747,40 @@ export async function updateStrategies(body) {
   }
 }
 
+export async function getStrategyById(id) {
+  try {
+    if (!id) {
+      return {
+        code: 400,
+        message: "Strategy ID is required",
+        success: false,
+        data: null,
+      };
+    }
+
+    const strategy = await Strategies.findByPk(id);
+
+    if (!strategy) {
+      return {
+        code: 404,
+        message: "Strategy not found",
+        success: false,
+        data: null,
+      };
+    }
+
+    return {
+      code: 200,
+      message: "Strategy fetched successfully",
+      success: true,
+      data: toStrategyResponse(strategy),
+    };
+  } catch (error) {
+    console.error("Error in getStrategyById service:", error);
+    throw new Error(`Failed to fetch strategy: ${error.message || error}`);
+  }
+}
+
 export async function deleteStrategies(body) {
   try {
     if (!body.id) {
@@ -925,6 +974,7 @@ const bulkCreateStrategy = async (details) => {
 export const strategiesService = {
   createStrategies,
   getStrategies,
+  getStrategyById,
   updateStrategies,
   deleteStrategies,
   buyStrategy,
