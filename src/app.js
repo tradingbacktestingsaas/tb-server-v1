@@ -24,8 +24,13 @@ import plansRoutes from "./routes/planRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoute.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import ordersRoutes from "./routes/ordersRoutes.js";
-import webhookRoute from "./routes/stripeWebhook.js";
+import feedBackRoutes from "./routes/feedbackRoutes.js";
+import bugReportRoutes from "./routes/bugReportRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
+import DashboardRoutes from "./routes/dashboardRoute.js";
+import webhookRoute from "./routes/webhookRoute.js";
+import userPersonalStrategyRoutes from "./routes/userPersonalStrategyRoutes.js";
+import feedbackRoutes from "./routes/feedbackRoutes.js";
 
 import {
   startSubscriptionCron,
@@ -57,20 +62,20 @@ const corsOptions = {
     "Authorization",
     "X-recaptcha-token",
     "x-recaptcha-token",
+    "stripe-signature",
   ],
 };
-app.use("/webhook", (req, res, next) => {
-  if (req.originalUrl.startsWith("/webhook")) {
-    next(); // skip global parsers
-  } else {
-    express.json()(req, res, next);
-  }
-});
 
-app.use(`/webhook`, webhookRoute);
+// Webhooks must come BEFORE global body parsers
+// Available endpoints:
+// - POST /public/api/v1/webhook/stripe
+// - POST /public/api/v1/webhook/tradesync
+app.use(`${globalPrefix}/webhook`, webhookRoute);
+
+// Global middlewares
+app.use(express.json());
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
-app.use(express.json());
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
@@ -97,6 +102,11 @@ app.use(`${globalPrefix}/subscription`, subscriptionRoutes);
 app.use(`${globalPrefix}/analytics`, analyticsRoutes);
 app.use(`${globalPrefix}/orders`, ordersRoutes);
 app.use(`${globalPrefix}/coupons`, couponRoutes);
+app.use(`${globalPrefix}/dashboard`, DashboardRoutes);
+app.use(`${globalPrefix}/user-strategy`, userPersonalStrategyRoutes);
+app.use(`${globalPrefix}/feedback`, feedbackRoutes);
+app.use(`${globalPrefix}/bug-report`, bugReportRoutes);
+app.use(`${globalPrefix}/feedback`, feedBackRoutes);
 
 startSubscriptionCron();
 reminderSubscriptionCron();

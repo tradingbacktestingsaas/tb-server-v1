@@ -13,6 +13,7 @@ const compress = buildCompressor({
 const router = express.Router();
 router.get("/get", usersController.getUsers);
 router.get("/get/:id", usersController.getUserById);
+router.get("/get/complete/:id", usersController.getCompleteUserById);
 router.patch("/update/:id", usersController.updateUser);
 router.delete("/delete/:id", usersController.deleteUser);
 router.post(

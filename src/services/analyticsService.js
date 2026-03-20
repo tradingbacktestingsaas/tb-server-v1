@@ -360,15 +360,19 @@ function getEmptyStats() {
 
 export async function podium() {
   try {
-    // 1️⃣ Get eligible trade accounts (MT4 / MT5 only, users not FREE)
+    /* ======================================================
+       1️⃣ Get eligible trade accounts (MT4 / MT5, non-FREE users)
+    ====================================================== */
+
     const tradeAccounts = await TradeAccount.findAll({
       where: {
-        type: ["MT4", "MT5"],
+        type: { [Op.in]: ["MT4", "MT5"] },
       },
       include: [
         {
           model: User,
           as: "user",
+          required: true,
           where: {
             plan: { [Op.ne]: "FREE" },
           },
@@ -384,62 +388,102 @@ export async function podium() {
       };
     }
 
-    // 2️⃣ Gather all TradeSync account IDs
+    /* ======================================================
+       2️⃣ Collect valid TradeSync IDs
+    ====================================================== */
+
     const accountIds = tradeAccounts
-      .filter((acc) => acc.tradesyncId)
+      .filter((acc) => !!acc.tradesyncId)
       .map((acc) => acc.tradesyncId);
 
     if (!accountIds.length) {
       return {
-        success: false,
+        success: true,
         data: [],
         message: "No valid TradeSync account IDs found",
       };
     }
 
-    // 3️⃣ Fetch all trades from TradeSync in one call
+    /* ======================================================
+       3️⃣ Fetch all trades from TradeSync
+    ====================================================== */
+
     const tradesRes = await tradeSyncGet(
       `/trades?account_ids=${accountIds.join(",")}`
     );
+
     const trades = tradesRes?.data?.data || [];
 
-    // 4️⃣ Group trades by account_id and calculate profit per account
+    /* ======================================================
+       4️⃣ Group profit by TradeSync account_id
+    ====================================================== */
+
     const profitByAccount = {};
+
     for (const trade of trades) {
       const accId = trade.account_id;
-      if (!profitByAccount[accId]) profitByAccount[accId] = 0;
-      profitByAccount[accId] += trade.profit || 0;
+      if (!accId) continue;
+
+      if (!profitByAccount[accId]) {
+        profitByAccount[accId] = 0;
+      }
+
+      profitByAccount[accId] += Number(trade.profit) || 0;
     }
 
-    // 5️⃣ Merge with account info from DB
-    const accountsWithProfit = tradeAccounts
-      .map((acc) => {
-        const totalProfit = profitByAccount[acc.tradesyncId] || 0;
-        return {
-          accountId: acc.id,
-          tradesyncId: acc.tradesyncId,
-          userId: acc.userId,
-          username: acc.user?.firstName + acc.user?.lastName || "Unknown",
-          avatar: acc.user?.avatar_url,
-          totalProfit,
-        };
-      })
-      .filter((a) => a.totalProfit !== 0);
+    /* ======================================================
+       5️⃣ Aggregate profits per USER (merge multiple accounts)
+    ====================================================== */
 
-    // 6️⃣ Sort and take top 15
-    const top15 = accountsWithProfit
+    const profitByUser = {};
+
+    for (const acc of tradeAccounts) {
+      const userId = acc.userId;
+      const accountProfit = profitByAccount[acc.tradesyncId] || 0;
+
+      if (!profitByUser[userId]) {
+        profitByUser[userId] = {
+          userId,
+          username:
+            `${acc.user?.firstName || ""} ${acc.user?.lastName || ""}`.trim() ||
+            "Unknown",
+          avatar: acc.user?.avatar_url || null,
+          totalProfit: 0,
+          accounts: 0,
+        };
+      }
+
+      profitByUser[userId].totalProfit += accountProfit;
+      profitByUser[userId].accounts += 1;
+    }
+
+    /* ======================================================
+       6️⃣ Convert to array + remove zero-profit users
+    ====================================================== */
+
+    const usersWithProfit = Object.values(profitByUser).filter(
+      (u) => u.totalProfit !== 0
+    );
+
+    /* ======================================================
+       7️⃣ Sort by totalProfit desc and take top 15
+    ====================================================== */
+
+    const top15 = usersWithProfit
       .sort((a, b) => b.totalProfit - a.totalProfit)
       .slice(0, 15);
 
     return {
       success: true,
       data: top15,
-      message: "Top 15 profitable accounts retrieved successfully",
+      message: "Top 15 profitable users retrieved successfully",
     };
   } catch (error) {
     console.error("Error in podium:", error);
+
     return {
       success: false,
+      data: [],
       message: "Failed to calculate podium",
       error: error.message,
     };

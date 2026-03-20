@@ -8,7 +8,7 @@ import Plans from "../models/plan.model.js";
 import { createFreeTradeAcc } from "./tradeAccService.js";
 import TradeAccount from "../models/trade_account.model.js";
 import Coupon from "../models/coupon.model.js";
-import { createNotification } from "./notificationService.js";
+import { sendSubscriptionUpdate } from "./subscriptionUpdateService.js";
 
 // Initialize Stripe with the API key
 const stripe = new Stripe(config.stripe.secretKey);
@@ -232,7 +232,7 @@ const createSetupIntent = async () => {
   } catch (error) {
     // Handle Stripe-specific errors
     const customError = new Error(
-      error.message || "Failed to create setup intent"
+      error.message || "Failed to create setup intent",
     );
     customError.statusCode = error.statusCode || 500;
     customError.stripeError = error;
@@ -269,7 +269,7 @@ const retrievePaymentMethod = async (paymentMethodId) => {
   } catch (error) {
     // Handle Stripe-specific errors
     const customError = new Error(
-      error.message || "Failed to retrieve payment method"
+      error.message || "Failed to retrieve payment method",
     );
     customError.statusCode = error.statusCode || 500;
     customError.stripeError = error;
@@ -380,7 +380,7 @@ const handleStripeEvents = async (event) => {
               userId,
               planCode,
               subscriptionId,
-            }
+            },
           );
           return;
         }
@@ -397,7 +397,7 @@ const handleStripeEvents = async (event) => {
               hasPlan: !!plan,
               userId,
               planCode,
-            }
+            },
           );
           return;
         }
@@ -444,7 +444,7 @@ const handleStripeEvents = async (event) => {
         } catch (e) {
           console.error(
             "Failed to update order from checkout.session.completed:",
-            e?.message || e
+            e?.message || e,
           );
         }
 
@@ -467,7 +467,7 @@ const handleStripeEvents = async (event) => {
           await userSubscription.update(userSubscriptionPayload);
         } else {
           userSubscription = await UserSubscription.create(
-            userSubscriptionPayload
+            userSubscriptionPayload,
           );
         }
 
@@ -495,21 +495,37 @@ const handleStripeEvents = async (event) => {
               account_no: account_no,
             });
           }
-
-          await createNotification({
-            userId: user.id,
-            title: "Your subscription ist started!",
-            type: "alert",
-            message:
-              "Your subscription is now active. You can start connecting your live accounts.",
-          });
         } catch (e) {
           console.error("createFreeTradeAcc failed:", e?.message || e);
         }
+
+        // Always notify user of new subscription, regardless of trade account creation
+        await sendSubscriptionUpdate({
+          userId: user.id,
+          title: "Subscription started",
+          type: "alert",
+          message:
+            "Your subscription is now active. You can start connecting your live accounts.",
+          emailSubject: "Your subscription is now active!",
+          emailHtml: `
+            <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto;">
+              <h2 style="color: #2196F3;">Subscription Activated 🎉</h2>
+              <p>Hello,</p>
+              <p>Your <strong>${plan.name || plan.code}</strong> subscription is now active.</p>
+              <p>You can now connect your live trading accounts and start backtesting.</p>
+              <p style="margin-top: 24px;">Thank you for choosing Trading Backtesting Platform!</p>
+            </div>
+          `,
+          data: {
+            kind: "subscription-created",
+            subscriptionId,
+            planCode: plan.code,
+          },
+        });
       } catch (err) {
         console.error(
           "Error handling checkout.session.completed:",
-          err?.message || err
+          err?.message || err,
         );
       }
       break;
@@ -529,18 +545,80 @@ const handleStripeEvents = async (event) => {
             invoiceId: invoice.id,
             hostedInvoiceUrl: invoice.hosted_invoice_url || null,
           });
+
+          if (order.userId) {
+            await sendSubscriptionUpdate({
+              userId: order.userId,
+              title: "Subscription payment successful",
+              type: "info",
+              message: "Your subscription payment was received successfully.",
+              emailSubject: "Payment received — thank you!",
+              emailHtml: `
+                <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto;">
+                  <h2 style="color: #4CAF50;">Payment Received ✅</h2>
+                  <p>Hello,</p>
+                  <p>Your subscription payment was received successfully. Your subscription remains active.</p>
+                  ${invoice.hosted_invoice_url ? `<p><a href="${invoice.hosted_invoice_url}" style="color: #2196F3;">View your invoice</a></p>` : ""}
+                  <p style="margin-top: 24px;">Thank you for using Trading Backtesting Platform!</p>
+                </div>
+              `,
+              data: {
+                kind: "subscription-payment-success",
+                subscriptionId,
+                invoiceId: invoice.id,
+              },
+            });
+          }
         }
       } catch (err) {
         console.error(
           "Error handling invoice.payment_succeeded:",
-          err?.message || err
+          err?.message || err,
         );
       }
       break;
     }
 
     case "invoice.payment_failed": {
-      console.log("⚠️ Payment failed:", event.data.object.id);
+      const invoice = event.data.object;
+      const subscriptionId = invoice.subscription;
+      console.log("⚠️ Payment failed:", invoice.id);
+
+      try {
+        const order = await Order.findOne({
+          where: { provider_sub_id: subscriptionId },
+        });
+
+        if (order?.userId) {
+          await sendSubscriptionUpdate({
+            userId: order.userId,
+            title: "Subscription payment failed",
+            type: "alert",
+            message:
+              "We could not process your subscription payment. Please update your payment method.",
+            emailSubject: "Action required: Payment failed",
+            emailHtml: `
+              <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto;">
+                <h2 style="color: #f44336;">Payment Failed ⚠️</h2>
+                <p>Hello,</p>
+                <p>We were unable to process your subscription payment. Please update your payment method to keep your subscription active.</p>
+                <a href="${config.frontendUrl}/plans" style="display: inline-block; margin-top: 12px; padding: 10px 20px; background-color: #f44336; color: white; text-decoration: none; border-radius: 5px;">Update Payment Method</a>
+                <p style="margin-top: 24px;">If you have any questions, please contact our support team.</p>
+              </div>
+            `,
+            data: {
+              kind: "subscription-payment-failed",
+              subscriptionId,
+              invoiceId: invoice.id,
+            },
+          });
+        }
+      } catch (err) {
+        console.error(
+          "Error handling invoice.payment_failed:",
+          err?.message || err,
+        );
+      }
       break;
     }
 
@@ -557,11 +635,33 @@ const handleStripeEvents = async (event) => {
             auto_renew: false,
             current_period_end: new Date(),
           });
+
+          await sendSubscriptionUpdate({
+            userId: existing.userId,
+            title: "Subscription canceled",
+            type: "alert",
+            message:
+              "Your subscription has been canceled. You can resubscribe anytime from the plans page.",
+            emailSubject: "Your subscription has been canceled",
+            emailHtml: `
+              <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto;">
+                <h2 style="color: #FF9800;">Subscription Canceled</h2>
+                <p>Hello,</p>
+                <p>Your subscription has been canceled. You will retain access until the end of your current billing period.</p>
+                <a href="${config.frontendUrl}/plans" style="display: inline-block; margin-top: 12px; padding: 10px 20px; background-color: #2196F3; color: white; text-decoration: none; border-radius: 5px;">Resubscribe</a>
+                <p style="margin-top: 24px;">We hope to see you back soon. Thank you for using Trading Backtesting Platform!</p>
+              </div>
+            `,
+            data: {
+              kind: "subscription-canceled",
+              subscriptionId,
+            },
+          });
         }
       } catch (err) {
         console.error(
           "Error handling customer.subscription.deleted:",
-          err?.message || err
+          err?.message || err,
         );
       }
       break;

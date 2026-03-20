@@ -78,11 +78,25 @@ const bulkCreateTrade = async (req, res) => {
   }
 };
 
+const getTradeJournal = async (req, res) => {
+  try {
+    const result = await tradeService.getTradeJournal(req.query);
+    return res.status(200).json(result);
+  } catch (error) {
+    return res.status(error.code || 500).json({
+      code: error.code || 500,
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
 export const tradeController = {
   createTrade,
   getTrades,
+  getTradeJournal,
   updateTrade,
   deleteTrade,
   bulkDeleteTrade,
-  bulkCreateTrade
+  bulkCreateTrade,
 };

@@ -7,35 +7,120 @@ import { hashPassword } from "../utils/hash.js";
 import TradeAccount from "../models/trade_account.model.js";
 import UserSubscription from "../models/user_subscription.model.js";
 import Plan from "../models/plan.model.js";
+import Order from "../models/order.model.js";
+
+const serializeUserDetail = (user) => {
+  if (!user) return user;
+
+  const plainUser =
+    typeof user.get === "function" ? user.get({ plain: true }) : user;
+  const feedbackCompleted =
+    plainUser?.is_feedback_completed ??
+    plainUser?.feedback_is_completed ??
+    false;
+
+  return {
+    ...plainUser,
+    is_notifications_enabled: plainUser?.is_notifications_enabled ?? false,
+    is_update_enabled: plainUser?.is_update_enabled ?? false,
+    is_feedback_completed: feedbackCompleted,
+    feedback_is_completed: feedbackCompleted,
+  };
+};
 
 export async function getUsers(options = {}) {
   try {
     const {
+      page,
+      search,
+      role,
+      is_verified,
+      is_blocked,
+      sortBy = "createdAt",
+      sortOrder = "desc",
       firstName,
       lastName,
+      type,
       email,
       blocked,
       limit = 10,
       offset = 0,
     } = options;
 
-    const where = {};
+    const parsedLimit = Math.max(1, Number(limit) || 10);
+    const parsedPage = Math.max(1, Number(page) || 1);
+    const parsedOffset =
+      page !== undefined
+        ? (parsedPage - 1) * parsedLimit
+        : Math.max(0, Number(offset) || 0);
+
+    const whereClause = {};
+
+    const parseBoolean = (value) => {
+      if (typeof value === "boolean") return value;
+      if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === "true") return true;
+        if (normalized === "false") return false;
+      }
+      return undefined;
+    };
+
+    const verifiedFilter = parseBoolean(is_verified);
+    const blockedFilter = parseBoolean(
+      is_blocked !== undefined ? is_blocked : blocked,
+    );
+
+    if (search) {
+      whereClause[Op.or] = [
+        { firstName: { [Op.iLike]: `%${search}%` } },
+        { lastName: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
 
     if (firstName) {
-      where.firstName = { [Op.iLike]: `%${firstName}%` };
+      whereClause.firstName = { [Op.iLike]: `%${firstName}%` };
     }
 
     if (lastName) {
-      where.lastName = { [Op.iLike]: `%${lastName}%` };
+      whereClause.lastName = { [Op.iLike]: `%${lastName}%` };
     }
 
     if (email) {
-      where.email = { [Op.iLike]: `%${email}%` };
+      whereClause.email = { [Op.iLike]: `%${email}%` };
     }
 
-    if (typeof blocked === "boolean") {
-      where.blocked = blocked;
+    if (role) {
+      whereClause.role = role;
     }
+
+    if (type) {
+      whereClause.type = type;
+    }
+
+    if (verifiedFilter !== undefined) {
+      whereClause.is_verified = verifiedFilter;
+    }
+
+    if (blockedFilter !== undefined) {
+      whereClause.blocked = blockedFilter;
+    }
+
+    const allowedSortBy = new Set([
+      "id",
+      "firstName",
+      "lastName",
+      "email",
+      "role",
+      "blocked",
+      "is_verified",
+      "createdAt",
+      "updatedAt",
+    ]);
+    const safeSortBy = allowedSortBy.has(sortBy) ? sortBy : "createdAt";
+    const safeSortOrder =
+      String(sortOrder).toLowerCase() === "asc" ? "ASC" : "DESC";
 
     const { count, rows } = await User.findAndCountAll({
       attributes: [
@@ -43,22 +128,31 @@ export async function getUsers(options = {}) {
         "firstName",
         "lastName",
         "email",
+        "is_verified",
         "blocked",
         "avatar_url",
+        "type",
+        "onboarding_completed",
+        "is_notifications_enabled",
+        "is_update_enabled",
+        "is_feedback_completed",
+        "auth_provider",
         "createdAt",
         "updatedAt",
         "role",
         "plan",
       ],
-      where,
-      limit,
-      offset,
-      order: [["createdAt", "DESC"]],
+      where: whereClause,
+      limit: parsedLimit,
+      offset: parsedOffset,
+      order: [[safeSortBy, safeSortOrder]],
     });
 
     return {
-      users: rows,
+      users: rows.map(serializeUserDetail),
       totalCount: count,
+      page: parsedPage,
+      limit: parsedLimit,
       success: true,
       message: "Users fetched successfully",
     };
@@ -80,6 +174,9 @@ export async function uploadAvatar(userId, req) {
         "blocked",
         "avatar_url",
         "activeTradeAccountId",
+        "is_notifications_enabled",
+        "is_update_enabled",
+        "is_feedback_completed",
         "createdAt",
         "updatedAt",
         "role",
@@ -145,7 +242,7 @@ export async function uploadAvatar(userId, req) {
     await user.save();
     return {
       message: "Avatar uploaded successfully",
-      data: user,
+      data: serializeUserDetail(user),
       success: true,
     };
   } catch (error) {
@@ -167,6 +264,12 @@ export async function getUserById(userId) {
         "avatar_url",
         "createdAt",
         "updatedAt",
+        "type",
+        "onboarding_completed",
+        "is_notifications_enabled",
+        "is_update_enabled",
+        "is_feedback_completed",
+        "auth_provider",
         "role",
         "plan",
       ],
@@ -220,7 +323,100 @@ export async function getUserById(userId) {
 
     return {
       message: "User fetched successfully",
-      data: { user: user },
+      data: { user: serializeUserDetail(user) },
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error in getUserById service:", error);
+    throw new Error(`Failed to fetch user: ${error}`);
+  }
+}
+
+export async function getCompleteUserById(userId) {
+  try {
+    const user = await User.findByPk(userId, {
+      order: [["createdAt", "DESC"]],
+      attributes: [
+        "id",
+        "firstName",
+        "lastName",
+        "email",
+        "blocked",
+        "avatar_url",
+        "createdAt",
+        "updatedAt",
+        "type",
+        "onboarding_completed",
+        "is_notifications_enabled",
+        "is_update_enabled",
+        "is_feedback_completed",
+        "auth_provider",
+        "role",
+        "plan",
+      ],
+      include: [
+        {
+          model: TradeAccount,
+          as: "tradeAccounts",
+          attributes: [
+            "id",
+            "userId",
+            "type",
+            "isActive",
+            "createdAt",
+            "updatedAt",
+            "account_no",
+            "broker_server",
+            "tradesyncId",
+          ],
+          where: { isActive: true },
+          required: false,
+        },
+        {
+          model: UserSubscription,
+          as: "subscriptions",
+          attributes: [
+            "id",
+            "userId",
+            "planid",
+            "status",
+            "start_date",
+            "current_period_end",
+          ],
+          include: [
+            {
+              model: Plan,
+              as: "plan",
+              attributes: ["id", "name", "code", "price_cents", "features"],
+            },
+          ],
+        },
+        {
+          model: Order,
+          as: "orders",
+          attributes: [
+            "id",
+            "userId",
+            "status",
+            "amountTotalCents",
+            "created_at",
+            "updated_at",
+          ],
+        },
+      ],
+    });
+
+    if (!user) {
+      return {
+        message: "User not found",
+        data: null,
+        success: false,
+      };
+    }
+
+    return {
+      message: "User fetched successfully",
+      data: { user: serializeUserDetail(user) },
       success: true,
     };
   } catch (error) {
@@ -328,7 +524,7 @@ const updateUser = async (userId, userDetail) => {
         blocked: user.blocked,
         type: "user",
       },
-      "1h"
+      "1h",
     );
 
     const payload = {
@@ -341,6 +537,10 @@ const updateUser = async (userId, userDetail) => {
       blocked: user.blocked,
       avatar_url: user.avatar_url,
       activeTradeAccountId: user.activeTradeAccountId,
+      is_notifications_enabled: user?.is_notifications_enabled ?? false,
+      is_update_enabled: user?.is_update_enabled ?? false,
+      is_feedback_completed: user?.is_feedback_completed ?? false,
+      feedback_is_completed: user?.is_feedback_completed ?? false,
     };
 
     return {
@@ -385,6 +585,7 @@ export const usersService = {
   bulkDeleteUsers,
   getUsers,
   getUserById,
+  getCompleteUserById,
   updateUser,
   uploadAvatar,
   deleteUser,

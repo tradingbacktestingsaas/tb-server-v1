@@ -141,7 +141,12 @@ const bulkCreateTradeAcc = async (req, res) => {
 };
 const switchTradeAcc = async (req, res) => {
   try {
-    const tradeAcc = await tradeAccService.switchTradeAcc(req.body);
+    const payload = {
+      ...req.body,
+      userId: req.user?.id || req.body?.userId,
+    };
+
+    const tradeAcc = await tradeAccService.switchTradeAcc(payload);
     return res.status(201).json(tradeAcc);
   } catch (error) {
     return res.status(400).json({
@@ -154,9 +159,13 @@ const switchTradeAcc = async (req, res) => {
 };
 const activeTradeAcc = async (req, res) => {
   try {
-    const tradeAcc = await tradeAccService.activeTradeAcc(req.body);
+    console.log(req.query);
+    
+    const tradeAcc = await tradeAccService.activeTradeAcc(req.query);
     return res.status(201).json(tradeAcc);
   } catch (error) {
+    console.log(error);
+    
     return res.status(400).json({
       code: 400,
       success: false,

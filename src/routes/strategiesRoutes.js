@@ -5,6 +5,7 @@ import auth from "../middlewares/auth.js";
 const router = express.Router();
 router.post("/create", strategiesController.createStrategies);
 router.get("/get", strategiesController.getStrategies);
+router.get("/get/:id", strategiesController.getStrategyById);
 router.patch("/update", strategiesController.updateStrategies);
 router.delete("/delete/:id", strategiesController.deleteStrategies);
 router.post("/buy-strategy", strategiesController.buyStrategy);

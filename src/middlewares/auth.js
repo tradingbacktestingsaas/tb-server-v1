@@ -65,6 +65,7 @@ const auth = (allowedRoles = [], options = {}) => {
             "blocked",
             "avatar_url",
             "createdAt",
+            "onboarding_completed",
             "updatedAt",
             "role",
             "plan",
@@ -128,7 +129,7 @@ const auth = (allowedRoles = [], options = {}) => {
         ) {
           throw new ApiError(
             httpStatus.FORBIDDEN,
-            "This HTTP method is not allowed for your role"
+            "This HTTP method is not allowed for your role",
           );
         }
       }

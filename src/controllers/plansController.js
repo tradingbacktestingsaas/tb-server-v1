@@ -15,7 +15,9 @@ const createPlans = async (req, res) => {
 
 const getPlans = async (req, res) => {
   try {
-    const plans = await plansService.getPlans();
+    console.log(req.query);
+    
+    const plans = await plansService.getPlans(req.query);
     return res.status(200).json(plans);
   } catch (error) {
     return res.status(error.code || 500).json({
