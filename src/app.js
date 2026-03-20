@@ -47,7 +47,7 @@ const allowedOrigins = [
   "https://tb-client-v1.vercel.app",
   "http://localhost:3000",
   "http://localhost:8080",
-  "https://tb-client-v2.vercel.app/",
+  "https://tb-client-v2.vercel.app",
   "http://localhost:5000",
 ];
 
