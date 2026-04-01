@@ -1,6 +1,7 @@
 # Trading Backtesting Application - Features Documentation
 
 ## Overview
+
 The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js backend service built with Express and Sequelize, designed to help traders manage, track, and analyze their trading activities with advanced backtesting capabilities.
 
 ---
@@ -8,6 +9,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🔐 Authentication & User Management
 
 ### Authentication Features
+
 - **User Registration** - Email-based account creation with validation
 - **User Login** - Secure authentication with JWT tokens
 - **Google OAuth Login** - Social authentication integration
@@ -28,6 +30,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 - **User Onboarding** - Complete onboarding process for new users
 
 ### User Management Features
+
 - **User CRUD Operations**
   - Get all users (with pagination and filters)
   - Get user by ID
@@ -45,6 +48,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 📊 Trading Features
 
 ### Trade Management
+
 - **Trade CRUD Operations**
   - Create individual trades
   - Get all trades (with filters and pagination)
@@ -56,6 +60,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 - **Trade Journal** - Comprehensive trade journal with detailed records
 
 ### Trade Account Management
+
 - **Account Operations**
   - Create trading accounts
   - Get all accounts
@@ -77,6 +82,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 📈 Analytics & Dashboard
 
 ### Analytics Features
+
 - **Dashboard Analytics** - Comprehensive trading performance metrics by user
 - **Full Analytics** - System-wide analytics and insights
 - **Leaderboard** - User ranking based on trading performance
@@ -88,6 +94,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
   - Performance trends
 
 ### Dashboard
+
 - **Unified Dashboard** - Single endpoint for consolidated user data
 - **Real-time Updates** - Current trading statistics and notifications
 - **Performance Visualization Data** - Metrics ready for charts and graphs
@@ -97,6 +104,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🎯 Strategies
 
 ### Strategy Marketplace
+
 - **Strategy Management**
   - Create custom strategies
   - Get all available strategies
@@ -110,6 +118,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 - **Bulk Operations** - Bulk create strategies
 
 ### User Personal Strategies
+
 - **Personal Strategy Management**
   - Create custom personal strategies
   - Get all user's personal strategies (with filters)
@@ -123,6 +132,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 💳 Subscription & Billing
 
 ### Subscription Management
+
 - **Stripe Integration**
   - Create checkout sessions
   - Secure payment processing
@@ -134,15 +144,18 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
   - Automatic status updates
 
 ### Plans
+
 - **Plan Management**
   - Create subscription plans
   - Get available plans
   - Pricing tiers and features
 
 ### Orders
+
 - **Order Tracking** - Get all orders and transaction history
 
 ### Coupons
+
 - **Coupon System**
   - Create discount coupons
   - Get coupon details
@@ -157,6 +170,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🔔 Notifications
 
 ### Notification System
+
 - **Notification Management**
   - Create notifications
   - Get user notifications
@@ -175,6 +189,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 📰 News & Information
 
 ### News Feed
+
 - **Trading News** - Get latest trading and market news
 - **RSS Integration** - Automated news aggregation
 - **Sentiment Analysis** - News sentiment scoring using NLP
@@ -184,6 +199,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 💬 User Feedback & Support
 
 ### Feedback System
+
 - **Feedback Management**
   - Submit feedback (users and admins)
   - Get all feedback (admin only)
@@ -193,6 +209,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
   - Delete feedback
 
 ### Bug Reporting
+
 - **Bug Report System**
   - Submit bug reports (users and admins)
   - Get all bug reports (admin only)
@@ -207,6 +224,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🔗 Webhook Integration
 
 ### Stripe Webhooks
+
 - **Payment Events**
   - Payment success notifications
   - Subscription updates
@@ -214,6 +232,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
   - Invoice notifications
 
 ### TradeSync Webhooks
+
 - **Account Synchronization**
   - Real-time trade synchronization
   - Account status updates (connected, disconnected, reconnected)
@@ -226,6 +245,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🔒 Security Features
 
 ### Security Implementations
+
 - **Rate Limiting** - Protect against brute force attacks (production)
 - **CORS Protection** - Whitelist-based origin validation
 - **JWT Authentication** - Secure token-based authentication
@@ -241,6 +261,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🖼️ Media & File Management
 
 ### Image Handling
+
 - **ImageKit Integration** - Cloud-based image storage
 - **Image Compression** - Automatic compression with Sharp
   - WebP format conversion
@@ -254,6 +275,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🌐 Real-time Features
 
 ### WebSocket Integration
+
 - **Socket.io** - Real-time bidirectional communication
 - **Live Updates** - Instant notifications and data synchronization
 - **Connection Management** - Handle multiple concurrent connections
@@ -263,6 +285,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 📧 Communication
 
 ### Email Services
+
 - **Nodemailer Integration** - Email delivery system
 - **Email Templates**
   - OTP verification emails
@@ -275,6 +298,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🗄️ Database & Data Management
 
 ### Database Features
+
 - **Sequelize ORM** - Database abstraction layer
 - **MySQL Support** - Primary database
 - **CockroachDB Support** - Distributed SQL database option
@@ -297,6 +321,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🛠️ Developer Features
 
 ### Development Tools
+
 - **Environment Configuration** - dotenv for environment management
 - **Hot Reload** - nodemon for development
 - **Logging** - Pino logger with pretty printing
@@ -304,6 +329,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 - **Express Best Practices** - Modern routing and middleware patterns
 
 ### API Features
+
 - **RESTful API Design** - Standard HTTP methods
 - **API Versioning** - `/public/api/v1` prefix
 - **Request/Response Validation** - Joi schema validation
@@ -315,6 +341,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 📦 Third-Party Integrations
 
 ### Integrated Services
+
 - **Stripe** - Payment processing
 - **Google OAuth** - Social authentication
 - **ImageKit** - Image CDN and processing
@@ -328,6 +355,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🔄 Automated Tasks (Cron Jobs)
 
 ### Scheduled Jobs
+
 - **Subscription Checker** - Monitor and update subscription statuses
 - **Subscription Reminders** - Send renewal notifications
 - **Automated Maintenance** - Background task processing
@@ -337,6 +365,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 🚀 Performance & Optimization
 
 ### Performance Features
+
 - **Image Optimization** - Automatic WebP conversion and compression
 - **Rate Limiting** - Request throttling
 - **Connection Pooling** - Database connection optimization
@@ -348,6 +377,7 @@ The Trading Backtesting Application (tb-server-v1) is a comprehensive Node.js ba
 ## 📱 Cross-Platform Support
 
 ### Supported Environments
+
 - **Multiple Origins** - Support for multiple client applications
   - Production app
   - Development environments
@@ -410,6 +440,7 @@ Based on the architecture, potential future features could include:
 ## 📞 Support
 
 For questions about features or functionality:
+
 - Submit feedback through the feedback system
 - Report bugs through the bug reporting system
 - Contact admin support
