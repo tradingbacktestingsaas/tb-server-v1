@@ -338,11 +338,6 @@ export async function createFreeSubscription(freeSubscriptionDetails) {
 
     // Create a FREE Trade Account for the user with random ACC_ prefixed accountId
     const result = await createFreeTradeAcc(user.id);
-    try {
-      await user.save();
-    } catch (e) {
-      console.error("Failed to create free trade account:", e?.message || e);
-    }
 
     return {
       code: 201,

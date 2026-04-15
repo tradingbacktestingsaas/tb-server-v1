@@ -6,7 +6,6 @@ import User from "../models/user.model.js";
 import UserSubscription from "../models/user_subscription.model.js";
 import Plans from "../models/plan.model.js";
 import { createFreeTradeAcc } from "./tradeAccService.js";
-import TradeAccount from "../models/trade_account.model.js";
 import Coupon from "../models/coupon.model.js";
 import { sendSubscriptionUpdate } from "./subscriptionUpdateService.js";
 
@@ -474,27 +473,7 @@ const handleStripeEvents = async (event) => {
         // Update user plan and ensure free trade account exists
         await User.update({ plan: plan.code }, { where: { id: user.id } });
         try {
-          const existingAcc = await TradeAccount.findOne({
-            where: { userId: user.id, type: "FREE" },
-          });
-          if (!existingAcc) {
-            const randomSuffix = Math.random()
-              .toString(36)
-              .slice(2, 10)
-              .toUpperCase();
-            const account_no = `ACC_${randomSuffix}`;
-
-            await TradeAccount.create({
-              userId: user.id,
-              type: "FREE",
-              isActive: true,
-              tradesyncId: "",
-              broker_server: "",
-              broker_server_id: "",
-              investor_password: "",
-              account_no: account_no,
-            });
-          }
+          await createFreeTradeAcc(user.id);
         } catch (e) {
           console.error("createFreeTradeAcc failed:", e?.message || e);
         }

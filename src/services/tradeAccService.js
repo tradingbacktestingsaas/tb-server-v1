@@ -412,69 +412,90 @@ export async function activeTradeAcc(q) {
 export async function createFreeTradeAcc(userId) {
   if (!userId) throw new Error("User ID is required");
 
-  const user = await User.findByPk(userId);
-  if (!user) throw new Error("User not found");
+  const t = await sequelize.transaction();
+  try {
+    // Lock user row so concurrent free-account creations for same user serialize.
+    const user = await User.findByPk(userId, {
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+    if (!user) throw new Error("User not found");
 
-  const existing = await TradeAccount.findOne({
-    where: { userId, type: "FREE" },
-  });
+    await TradeAccount.update(
+      { isActive: false },
+      {
+        where: { userId, type: { [Op.in]: ["MT4", "MT5"] } },
+        transaction: t,
+      },
+    );
 
-  await TradeAccount.update(
-    { isActive: false },
-    {
-      where: { userId, type: { [Op.in]: ["MT4", "MT5"] } },
-    },
-  );
+    let existing = await TradeAccount.findOne({
+      where: { userId, type: "FREE" },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
 
-  const userData = {
-    id: user.id,
-    email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    blocked: user.blocked,
-    plan: user.plan,
-    avatar_url: user.avatar_url,
-    active: user.active,
-    type: user.type,
-    role: user.role,
-  };
+    const userData = {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      blocked: user.blocked,
+      plan: user.plan,
+      avatar_url: user.avatar_url,
+      active: user.active,
+      type: user.type,
+      role: user.role,
+    };
 
-  if (existing) {
-    existing.isActive = true;
-    await existing.save();
+    if (existing) {
+      if (!existing.isActive) {
+        existing.isActive = true;
+        await existing.save({ transaction: t });
+      }
+
+      await t.commit();
+      return {
+        message: "Downgraded to free",
+        tradeAccount: existing,
+        user: userData,
+        success: true,
+      };
+    }
+
+    const accountId = `ACC_${Math.random()
+      .toString(36)
+      .slice(2, 10)
+      .toUpperCase()}`;
+
+    existing = await TradeAccount.create(
+      {
+        userId,
+        account_no: accountId,
+        investor_password: "",
+        broker_server: "",
+        broker_server_id: "",
+        tradesyncId: null,
+        token: null,
+        type: "FREE",
+        isActive: true,
+      },
+      { transaction: t },
+    );
+
+    if (!existing) throw new Error("Trade account not created");
+
+    await t.commit();
     return {
-      message: "Downgraded to free",
+      message: "Free trade account created successfully",
       tradeAccount: existing,
       user: userData,
       success: true,
     };
+  } catch (error) {
+    await t.rollback();
+    throw error;
   }
-
-  const accountId = `ACC_${Math.random()
-    .toString(36)
-    .slice(2, 10)
-    .toUpperCase()}`;
-
-  const tradeAccount = await TradeAccount.create({
-    userId,
-    account_no: accountId,
-    investor_password: "",
-    broker_server: "",
-    broker_server_id: "",
-    tradesyncId: null,
-    token: null,
-    type: "FREE",
-    isActive: true,
-  });
-
-  if (!tradeAccount) throw new Error("Trade account not created");
-
-  return {
-    message: "Free trade account created successfully",
-    tradeAccount,
-    user: userData,
-    success: true,
-  };
 }
 
 export async function getTradeAccs(options = {}) {
