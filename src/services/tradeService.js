@@ -81,11 +81,54 @@ function applyTradeFilters(trades, { selectedDate, month }) {
   return trades;
 }
 
+function buildBadRequestError(message) {
+  const error = new Error(message);
+  error.code = 400;
+  return error;
+}
+
+function validateCreateTradeDates(tradeDetails = {}) {
+  const { openDate, closeDate } = tradeDetails;
+
+  if (!openDate) {
+    throw buildBadRequestError("Open Date is required.");
+  }
+
+  const parsedOpenDate = new Date(openDate);
+  if (Number.isNaN(parsedOpenDate.getTime())) {
+    throw buildBadRequestError("Open Date is invalid.");
+  }
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  if (parsedOpenDate < todayStart) {
+    throw buildBadRequestError("Open Date cannot be in the past.");
+  }
+
+  if (closeDate) {
+    const parsedCloseDate = new Date(closeDate);
+
+    if (Number.isNaN(parsedCloseDate.getTime())) {
+      throw buildBadRequestError("Close Date is invalid.");
+    }
+
+    if (parsedCloseDate < parsedOpenDate) {
+      throw buildBadRequestError(
+        "Close Date must be the same as or later than Open Date.",
+      );
+    }
+  }
+}
+
 export async function createTrade(tradeDetails) {
   try {
+    validateCreateTradeDates(tradeDetails);
+
     const trade = await Trade.create(tradeDetails);
     if (!trade) {
-      throw new Error("Trade not created");
+      const createError = new Error("Trade not created");
+      createError.code = 500;
+      throw createError;
     }
     return {
       code: 201,
@@ -95,7 +138,14 @@ export async function createTrade(tradeDetails) {
     };
   } catch (error) {
     console.error("Error in createTrade service:", error);
-    throw new Error(`Failed to create trade: ${error}`);
+
+    if (error?.code) {
+      throw error;
+    }
+
+    const unknownError = new Error(`Failed to create trade: ${error}`);
+    unknownError.code = 500;
+    throw unknownError;
   }
 }
 

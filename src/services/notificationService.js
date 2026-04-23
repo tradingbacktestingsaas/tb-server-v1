@@ -281,11 +281,30 @@ const deleteNotificationById = async (notificationId) => {
   }
 };
 
-const markAsReadNotification = async (notifcationId) => {
+const markAsReadNotification = async (notificationId, userId) => {
   try {
-    const notification = await UserNotification.findByPk(notifcationId);
+    let notification = null;
+
+    if (userId) {
+      notification = await UserNotification.findOne({
+        where: { userId, notificationId },
+      });
+    }
+
+    if (!notification) {
+      notification = await UserNotification.findByPk(notificationId);
+    }
+
     if (!notification) {
       throw new Error("notification not found");
+    }
+
+    if (notification.is_read) {
+      return {
+        message: "notification already marked as read",
+        data: notification,
+        success: true,
+      };
     }
 
     notification.is_read = true;

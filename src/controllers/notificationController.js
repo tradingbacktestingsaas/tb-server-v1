@@ -99,6 +99,7 @@ const markAsReadNotification = async (req, res) => {
   try {
     const notification = await notificationService.markAsReadNotification(
       req.params.id,
+      req.user?.id || req.body?.userId,
     );
     return res.status(201).json(notification);
   } catch (error) {
@@ -114,7 +115,7 @@ const markAsReadNotification = async (req, res) => {
 const markAllAsReadNotification = async (req, res) => {
   try {
     const notification = await notificationService.markAllAsReadNotification(
-      req.params.id,
+      req.user?.id || req.params.id,
     );
     return res.status(201).json(notification);
   } catch (error) {
