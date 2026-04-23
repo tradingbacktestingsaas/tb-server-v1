@@ -10,7 +10,7 @@ const isImplicitTLS = port === 465;
 const transporter = nodemailer.createTransport({
   host: email.smtp.host,
   port: port,
-  secure: isImplicitTLS, // true for 465 (implicit TLS), false for 587 (STARTTLS)
+  secure: true, // true for 587, false for other ports
   auth: {
     user: email.smtp.auth.user,
     pass: email.smtp.auth.pass,
